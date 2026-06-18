@@ -39,7 +39,7 @@ jobs:
 
       - name: Upload database
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: titantrader-db
           path: titantrader.db
@@ -47,7 +47,7 @@ jobs:
 
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: logs
           path: logs/
