@@ -1,0 +1,76 @@
+# TitanTrader — Real Money Readiness Report
+
+Generated: {DATE}
+
+## Performance Metrics
+
+- [ ] 30-day return: {RETURN}% (need ≥ 0%)
+- [ ] Win rate: {WIN_RATE}% (need ≥ 52%)
+- [ ] Sharpe ratio: {SHARPE} (need ≥ 0.8)
+- [ ] Max drawdown: {MAX_DD}% (need < 15%)
+- [ ] Total trades: {TOTAL_TRADES} (need ≥ 100)
+- [ ] ML accuracy: {ML_ACC}% (need ≥ 57%)
+- [ ] Max loss streak: {MAX_STREAK} (need ≤ 6)
+- [ ] All strategies tested: YES/NO
+
+## Verdict
+
+**READY** / **NOT READY**
+
+---
+
+## If READY — Steps to Go Live
+
+1. **Sign up at Alpaca.markets**
+   - Free account, instant
+   - Works from India (passport verified)
+
+2. **Set TRADING_MODE=alpaca_paper in .env**
+   ```
+   TRADING_MODE=alpaca_paper
+   ```
+   - Test for 1 more week with real Alpaca data
+
+3. **Get API Keys**
+   - Add `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` to .env
+
+4. **Switch to Live**
+   ```
+   TRADING_MODE=alpaca_live
+   STARTING_CAPITAL=500  # Start small
+   ```
+
+5. **Restart Bot**
+   ```
+   python main.py
+   ```
+   - You will see a big red warning on every startup:
+     ```
+     ⚠️  LIVE TRADING — REAL MONEY AT RISK
+     Capital: $500 | Max position: 15% | Stop-loss: 3%
+     ```
+
+6. **Monitor closely for 2 weeks**
+   - Dashboard updates every 30s
+   - Check drawdown daily
+   - Logs all fills with exact prices, fees, P&L
+
+7. **Increase capital gradually**
+   - Week 3-4: $1,000
+   - Week 5-6: $2,500
+   - Only if 2+ week return > +5%
+
+---
+
+## If NOT READY — Next Steps
+
+The bot has identified gaps. Common reasons:
+
+- **Low win rate** → Review strategy parameters or backtest settings
+- **High drawdown** → Tighten stop-loss or reduce position size
+- **Not enough trades** → Lower `TRADE_INTERVAL_MINUTES` to 3 min
+- **ML accuracy low** → Collect more trades (train on 50+ trades)
+
+**Do not upgrade to real money until ALL checkboxes pass.**
+
+Every trade on real money costs fee. Honest testing first, real money second.
