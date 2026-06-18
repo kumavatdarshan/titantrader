@@ -84,7 +84,7 @@ class TitanTrader:
     async def _init_strategies(self):
         """Create strategy records in DB."""
         async with self.session_factory() as session:
-            for strategy_name in ["ema_cross", "rsi_reversion", "macd_momentum", "ml_predictor"]:
+            for strategy_name in ["ema_cross", "rsi_reversion", "macd_momentum", "volatility_breakout", "ml_predictor"]:
                 result = await session.execute(
                     select(StrategyModel).where(StrategyModel.name == strategy_name)
                 )

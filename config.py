@@ -14,11 +14,11 @@ class Config:
     MARKET_OPEN_UTC = os.getenv("MARKET_OPEN_UTC", "13:30")
     MARKET_CLOSE_UTC = os.getenv("MARKET_CLOSE_UTC", "20:00")
 
-    MAX_POSITION_PCT = float(os.getenv("MAX_POSITION_PCT", 0.15))
-    STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", 0.03))
-    TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", 0.06))
-    MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", 5))
-    DRAWDOWN_PAUSE_PCT = float(os.getenv("DRAWDOWN_PAUSE_PCT", 0.15))
+    MAX_POSITION_PCT = float(os.getenv("MAX_POSITION_PCT", 0.10))
+    STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", 0.02))
+    TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", 0.08))
+    MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", 4))
+    DRAWDOWN_PAUSE_PCT = float(os.getenv("DRAWDOWN_PAUSE_PCT", 0.12))
 
     KELLY_FRACTION_CAP = float(os.getenv("KELLY_FRACTION_CAP", 0.25))
     MIN_KELLY_TRADES = int(os.getenv("MIN_KELLY_TRADES", 10))

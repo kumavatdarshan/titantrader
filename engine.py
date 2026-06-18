@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 from sqlalchemy import select
 from broker.base import Broker
-from strategies import EMACrossStrategy, RSIReversionStrategy, MACDMomentumStrategy, MLPredictorStrategy
+from strategies import EMACrossStrategy, RSIReversionStrategy, MACDMomentumStrategy, MLPredictorStrategy, VolatilityBreakoutStrategy
 from db import Position, Trade, Strategy as StrategyModel, EquitySnapshot, Lesson
 from config import Config
 from risk import PositionSizer
@@ -21,6 +21,7 @@ class TradingEngine:
             EMACrossStrategy(),
             RSIReversionStrategy(),
             MACDMomentumStrategy(),
+            VolatilityBreakoutStrategy(),
             MLPredictorStrategy()
         ]
         self.is_paused = False
@@ -124,16 +125,21 @@ class TradingEngine:
                 await self._execute_consensus_trade(session, symbol, current_price, signals)
 
     async def _execute_consensus_trade(self, session, symbol, price, signals):
-        """Execute trade if 2+ strategies agree."""
-        buy_signals = sum(1 for _, s in signals if s.direction == "BUY")
-        sell_signals = sum(1 for _, s in signals if s.direction == "SELL")
+        """Execute trade with confidence-weighted consensus."""
+        buy_signals = [(name, s) for name, s in signals if s.direction == "BUY" and s.confidence >= 0.4]
+        sell_signals = [(name, s) for name, s in signals if s.direction == "SELL" and s.confidence >= 0.4]
 
-        if buy_signals >= 2:
-            logger.info(f"{symbol}: BUY consensus ({buy_signals}/{len(signals)} strategies)")
+        buy_count = len(buy_signals)
+        sell_count = len(sell_signals)
+        buy_confidence = sum(s.confidence for _, s in buy_signals) / len(buy_signals) if buy_signals else 0
+        sell_confidence = sum(s.confidence for _, s in sell_signals) / len(sell_signals) if sell_signals else 0
+
+        if buy_count >= 2 and buy_confidence >= 0.5:
+            logger.info(f"{symbol}: BUY consensus ({buy_count} strategies, confidence={buy_confidence:.2f})")
             await self._place_buy_order(session, symbol, price)
 
-        elif sell_signals >= 2:
-            logger.info(f"{symbol}: SELL consensus ({sell_signals}/{len(signals)} strategies)")
+        elif sell_count >= 2 and sell_confidence >= 0.5:
+            logger.info(f"{symbol}: SELL consensus ({sell_count} strategies, confidence={sell_confidence:.2f})")
             await self._place_sell_order(session, symbol, price)
 
     async def _place_buy_order(self, session, symbol, price):
