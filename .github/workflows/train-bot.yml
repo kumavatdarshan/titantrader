@@ -28,10 +28,10 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 🐍 Setup Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -121,7 +121,7 @@ jobs:
 
       - name: 📤 Upload Database (60-day retention)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: titantrader-db
           path: titantrader.db
@@ -130,7 +130,7 @@ jobs:
 
       - name: 📤 Upload ML Models (90-day retention)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: elite-models
           path: models/
@@ -139,7 +139,7 @@ jobs:
 
       - name: 📤 Upload Trading Logs (30-day retention)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: trading-logs
           path: logs/
