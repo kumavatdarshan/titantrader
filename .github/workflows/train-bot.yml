@@ -69,7 +69,7 @@ jobs:
           LOG_LEVEL: INFO
         run: |
           echo "🎯 Starting Elite Paper Trading Session..."
-          timeout 240m python main.py 2>&1 || true
+          timeout 240m python main.py
           echo "✅ Paper trading session completed"
 
       - name: 🤖 Elite ML Model Training (Intensive)
@@ -97,7 +97,7 @@ jobs:
               logger.info('✅ Elite ML training completed')
 
           asyncio.run(train())
-          " || true
+          "
           echo "✅ ML training session completed"
 
       - name: 📊 Backtest Best Model
@@ -117,7 +117,7 @@ jobs:
 
           asyncio.run(backtest())
           " || true
-          echo "✅ Backtest completed"
+          echo "✅ Backtest completed (may have failed silently)"
 
       - name: 📤 Upload Database (60-day retention)
         if: always()
