@@ -87,13 +87,17 @@ class TradingEngine:
                     use_mock = Config.is_paper_mode()
                     price_data = await fetch_price(symbol, use_mock=use_mock)
 
-                if not price_data['is_stale']:
-                    prices[symbol] = price_data['price']
-                else:
-                    logger.warning(f"{symbol}: Stale price (>10min old), skipping")
+                prices[symbol] = price_data['price']
+                age_min = (datetime.utcnow() - price_data['timestamp']).total_seconds() / 60
+                logger.info(f"{symbol}: ${price_data['price']:.2f} ({age_min:.1f}min old)")
             except Exception as e:
                 logger.error(f"Failed to fetch {symbol}: {e}")
 
+        if not prices:
+            logger.warning("NO PRICES FETCHED - Cannot trade")
+            return prices
+
+        logger.info(f"Fetched {len(prices)} prices: {list(prices.keys())}")
         return prices
 
     async def _generate_and_execute_signals(self, current_prices: dict):
@@ -141,6 +145,8 @@ class TradingEngine:
         elif sell_count >= 1 and sell_confidence >= 0.35:
             logger.info(f"{symbol}: SELL signal ({sell_count} strategies, confidence={sell_confidence:.2f})")
             await self._place_sell_order(session, symbol, price)
+        else:
+            logger.debug(f"{symbol}: No consensus (BUY:{buy_count}@{buy_confidence:.2f}, SELL:{sell_count}@{sell_confidence:.2f})")
 
     async def _place_buy_order(self, session, symbol, price):
         """Place a buy order if conditions met."""

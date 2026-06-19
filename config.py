@@ -38,7 +38,7 @@ class Config:
     ML_MIN_TRADES_TO_TRAIN = int(os.getenv("ML_MIN_TRADES_TO_TRAIN", 30))
     ML_RETRAIN_HOUR = int(os.getenv("ML_RETRAIN_HOUR", 20))
 
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
 
     DB_PATH = "titantrader.db"
 

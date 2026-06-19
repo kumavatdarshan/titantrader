@@ -69,7 +69,7 @@ class AlpacaBroker(Broker):
             bar_time = datetime.fromisoformat(str(bar.t).replace('Z', '+00:00'))
 
             age_minutes = (now - bar_time).total_seconds() / 60
-            is_stale = age_minutes > 10
+            is_stale = age_minutes > 30
 
             price_data = {
                 'symbol': symbol,
@@ -136,7 +136,8 @@ class AlpacaBroker(Broker):
                 await asyncio.sleep(5)
                 status = self.api.get_order(alpaca_order.id)
 
-                if status.filled_qty and status.filled_qty > 0:
+                filled_qty = float(status.filled_qty) if status.filled_qty else 0
+                if filled_qty > 0:
                     filled = True
                     fill_price = float(status.filled_avg_price)
                     logger.info(f"✓ Order filled: {side} {qty} {symbol} @ ${fill_price:.4f}")
