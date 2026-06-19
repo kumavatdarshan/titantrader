@@ -41,6 +41,11 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
 
+      - name: 📁 Create Required Directories
+        run: |
+          mkdir -p logs
+          mkdir -p models
+
       - name: 🔐 Configure Secrets
         run: |
           echo "ALPACA_BASE_URL=${{ secrets.ALPACA_BASE_URL }}" >> .env
