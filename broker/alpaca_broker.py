@@ -125,14 +125,14 @@ class AlpacaBroker(Broker):
                 symbol=symbol,
                 qty=qty,
                 side=side.lower(),
-                type=order_type.lower(),
-                time_in_force='day'
+                type='market',
+                time_in_force='day'  # Valid for the trading day
             )
 
             # Wait for fill (poll Alpaca order status)
             filled = False
             fill_price = 0
-            for attempt in range(12):  # Poll for up to 60 seconds (5 second intervals)
+            for attempt in range(6):  # Poll for up to 30 seconds (5 second intervals)
                 await asyncio.sleep(5)
                 status = self.api.get_order(alpaca_order.id)
 
@@ -140,16 +140,29 @@ class AlpacaBroker(Broker):
                 if filled_qty > 0:
                     filled = True
                     fill_price = float(status.filled_avg_price)
-                    logger.info(f"✓ Order filled: {side} {qty} {symbol} @ ${fill_price:.4f}")
+                    logger.info(f"✓ Order filled: {side} {filled_qty:.4f} {symbol} @ ${fill_price:.4f}")
                     break
 
                 if status.status == 'cancelled':
+                    logger.warning(f"Order cancelled (likely insufficient liquidity)")
                     raise ValueError(f"Order cancelled: {status.id}")
 
             if not filled:
-                logger.error(f"Order {alpaca_order.id} not filled after 60s, cancelling")
-                self.api.cancel_order(alpaca_order.id)
-                raise TimeoutError(f"Order timeout: {symbol}")
+                logger.warning(f"Order {alpaca_order.id} not filled after 30s (checking status...)")
+                final_status = self.api.get_order(alpaca_order.id)
+                final_qty = float(final_status.filled_qty) if final_status.filled_qty else 0
+
+                if final_qty > 0:
+                    fill_price = float(final_status.filled_avg_price)
+                    logger.info(f"✓ Order eventually filled: {final_qty:.4f} {symbol} @ ${fill_price:.4f}")
+                    filled = True
+                else:
+                    logger.error(f"Order {alpaca_order.id} not filled after 30s")
+                    try:
+                        self.api.cancel_order(alpaca_order.id)
+                    except:
+                        pass
+                    raise TimeoutError(f"Order timeout: {symbol}")
 
             # Record the trade in our DB
             async with self.session_factory() as session:
