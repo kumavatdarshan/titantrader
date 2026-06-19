@@ -8,16 +8,16 @@ load_dotenv()
 class Config:
     TRADING_MODE = os.getenv("TRADING_MODE", "local_paper")
     STARTING_CAPITAL = float(os.getenv("STARTING_CAPITAL", 10000))
-    SYMBOLS = os.getenv("SYMBOLS", "AAPL,TSLA,NVDA,SPY,MSFT").split(",")
+    SYMBOLS = os.getenv("SYMBOLS", "AAPL,MSFT,NVDA,GOOGL,TSLA,SPY,JPM,XOM,QQQ").split(",")
     TRADE_INTERVAL_MINUTES = int(os.getenv("TRADE_INTERVAL_MINUTES", 5))
 
     MARKET_OPEN_UTC = os.getenv("MARKET_OPEN_UTC", "13:30")
     MARKET_CLOSE_UTC = os.getenv("MARKET_CLOSE_UTC", "20:00")
 
-    MAX_POSITION_PCT = float(os.getenv("MAX_POSITION_PCT", 0.10))
+    MAX_POSITION_PCT = float(os.getenv("MAX_POSITION_PCT", 0.12))
     STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", 0.02))
     TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", 0.08))
-    MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", 4))
+    MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", 8))
     DRAWDOWN_PAUSE_PCT = float(os.getenv("DRAWDOWN_PAUSE_PCT", 0.12))
 
     KELLY_FRACTION_CAP = float(os.getenv("KELLY_FRACTION_CAP", 0.25))
