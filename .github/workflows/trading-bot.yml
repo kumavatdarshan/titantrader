@@ -23,8 +23,8 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip setuptools wheel
-        pip install -r requirements.txt
+        python -m pip install --upgrade pip
+        pip install aiosqlite alpaca-trade-api yfinance pandas numpy sqlalchemy scikit-learn ta python-dotenv pydantic aiohttp
 
     - name: Create directories
       run: mkdir -p logs models
@@ -35,6 +35,8 @@ jobs:
         TRADING_MODE=${{ secrets.TRADING_MODE }}
         ALPACA_API_KEY=${{ secrets.ALPACA_API_KEY }}
         ALPACA_SECRET_KEY=${{ secrets.ALPACA_SECRET_KEY }}
+        ALPACA_PAPER_URL=https://paper-api.alpaca.markets
+        ALPACA_LIVE_URL=https://api.alpaca.markets
         STARTING_CAPITAL=${{ secrets.STARTING_CAPITAL }}
         SYMBOLS=${{ secrets.SYMBOLS }}
         TRADE_INTERVAL_MINUTES=30
@@ -42,13 +44,15 @@ jobs:
         EOF
 
     - name: Run trading cycle
-      run: python run_cycle.py 2>&1 | tee logs/run.log
+      run: |
+        python run_cycle.py 2>&1 | tee logs/run.log
       continue-on-error: true
 
-    - name: Commit and push updates
+    - name: Commit and push results
       run: |
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git config --global user.name "github-actions[bot]"
-        git add -A
-        git commit -m "Trading cycle: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || echo "No changes to commit"
-        git push
+        git add titantrader.db logs/ models/ 2>/dev/null || true
+        git commit -m "Auto: Trading cycle $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || echo "Nothing to commit"
+        git push || echo "Push failed"
+      continue-on-error: true
