@@ -152,6 +152,13 @@ class TradingEngine:
         """Place a buy order if conditions met."""
         try:
             account = await self.broker.get_account()
+
+            existing_pos = await session.execute(select(Position).where(Position.symbol == symbol))
+            existing = existing_pos.scalar_one_or_none()
+            if existing:
+                logger.warning(f"{symbol}: Position already exists (qty={existing.qty}). Skipping new buy order.")
+                return
+
             positions = await session.execute(select(Position))
             pos_list = positions.scalars().all()
 
@@ -223,8 +230,7 @@ class TradingEngine:
                     entry_trade_id=position.id
                 )
                 session.add(trade)
-                await session.delete(position)
-                await session.flush()
+                session.delete(position)
                 await session.commit()
                 logger.info(f"{symbol}: Position closed. P&L: ${pnl:.2f}")
 
@@ -244,9 +250,8 @@ class TradingEngine:
                     if pos.symbol in current_prices:
                         price = current_prices[pos.symbol]
                         await self.broker.place_order(pos.symbol, "SELL", pos.qty)
-                        await session.delete(pos)
+                        session.delete(pos)
 
-                await session.flush()
                 await session.commit()
                 logger.info(f"Emergency close: {len(pos_list)} positions closed")
 
