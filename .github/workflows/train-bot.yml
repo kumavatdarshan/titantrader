@@ -2,19 +2,23 @@ name: 🚀 TitanTrader Elite Training - World Class Trading Bot
 
 on:
   schedule:
-    # Evening Paper Trading: 9:30 PM IST = 4:00 PM UTC = 11:30 AM EDT
-    # - Peak market hours with high liquidity
-    # - Execute all strategies on best market conditions
-    # - Collect diverse training data for ML
-    # - 4-hour trading session
-    - cron: '0 16 * * *'
+    # Market Open Trading: 7:00 PM IST = 1:30 PM UTC = 9:30 AM EDT
+    # - HIGHEST volatility & volume at market open
+    # - Best risk/reward setup for momentum strategies
+    # - Capture opening gaps and big moves
+    - cron: '30 13 * * *'
 
-    # Late Night ML Training: 2:00 AM IST = 8:30 PM UTC (previous day)
-    # - AFTER US market closes (1:30 AM IST)
+    # Pre-Close Trading: 12:30 AM IST = 7:00 PM UTC = 3:00 PM EDT
+    # - Afternoon volatility before market close
+    # - Catch closing rallies and dumps
+    # - 1 hour before market close for better fills
+    - cron: '0 19 * * *'
+
+    # Post-Market ML Training: 2:00 AM IST = 8:30 PM UTC (previous day)
+    # - AFTER US market closes (market closes 4 PM ET = 1:30 AM IST)
     # - Train on full day's trading data
     # - Intensive model retraining with ensemble methods
-    # - Hyperparameter tuning
-    # - Cross-validation on 60-day historical data
+    # - Hyperparameter tuning & feature importance analysis
     - cron: '30 20 * * *'
 
   workflow_dispatch:
