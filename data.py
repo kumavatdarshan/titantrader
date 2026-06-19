@@ -99,33 +99,42 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
                 symbol,
                 timeframe,
                 start=start,
-                limit=100
+                limit=100,
+                adjustment='all'
             )
 
-            if bars and len(bars) > 0:
+            if bars is not None and len(bars) > 0:
                 data = []
-                for bar in bars:
+
+                if isinstance(bars, dict):
+                    bars_list = list(bars.values())
+                else:
+                    bars_list = list(bars)
+
+                for bar in bars_list:
                     data.append({
-                        'Date': pd.Timestamp(bar.t),
-                        'Open': float(bar.o),
-                        'High': float(bar.h),
-                        'Low': float(bar.l),
-                        'Close': float(bar.c),
-                        'Volume': float(bar.v)
+                        'Date': pd.Timestamp(bar.t) if hasattr(bar, 't') else pd.Timestamp(bar['t']),
+                        'Open': float(bar.o if hasattr(bar, 'o') else bar['o']),
+                        'High': float(bar.h if hasattr(bar, 'h') else bar['h']),
+                        'Low': float(bar.l if hasattr(bar, 'l') else bar['l']),
+                        'Close': float(bar.c if hasattr(bar, 'c') else bar['c']),
+                        'Volume': float(bar.v if hasattr(bar, 'v') else bar['v'])
                     })
 
-                df = pd.DataFrame(data)
-                logger.info(f"✓ Fetched {len(df)} bars for {symbol} from Alpaca")
+                if len(data) > 0:
+                    df = pd.DataFrame(data)
+                    df = df.sort_values('Date').reset_index(drop=True)
+                    logger.info(f"✓ Fetched {len(df)} bars for {symbol} from Alpaca")
 
-                return {
-                    'symbol': symbol,
-                    'data': df,
-                    'rows': len(df),
-                    'source': 'alpaca',
-                    'success': True
-                }
-            else:
-                raise Exception(f"No bars from Alpaca for {symbol}")
+                    return {
+                        'symbol': symbol,
+                        'data': df,
+                        'rows': len(df),
+                        'source': 'alpaca',
+                        'success': True
+                    }
+
+            raise Exception(f"No bars from Alpaca for {symbol}")
 
         except Exception as e:
             logger.warning(f"Failed to fetch {symbol} from Alpaca: {e}. Falling back to yfinance...")

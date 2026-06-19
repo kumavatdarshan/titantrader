@@ -7,8 +7,8 @@ class RSIReversionStrategy(Strategy):
 
     async def generate_signal(self, symbol: str, price_df: pd.DataFrame) -> Signal:
         """Enhanced RSI mean reversion with momentum confirmation."""
-        if len(price_df) < 50:
-            return Signal(direction="HOLD", confidence=0.0, reasoning="Not enough candles (need 50)")
+        if len(price_df) < 21:
+            return Signal(direction="HOLD", confidence=0.0, reasoning="Not enough candles (need 21)")
 
         close = price_df['Close']
         high = price_df['High']
@@ -50,6 +50,14 @@ class RSIReversionStrategy(Strategy):
                 confidence=confidence,
                 reasoning=f"Strong overbought: RSI={current_rsi:.1f}, momentum={momentum:.3f}, confidence={confidence:.2f}"
             )
+
+        if current_rsi < 35 and momentum < -0.01:
+            confidence = min((50 - current_rsi) / 50 * 0.6, 0.5)
+            return Signal(direction="BUY", confidence=confidence, reasoning=f"Oversold: RSI={current_rsi:.1f}")
+
+        if current_rsi > 65 and momentum > 0.01:
+            confidence = min((current_rsi - 50) / 50 * 0.6, 0.5)
+            return Signal(direction="SELL", confidence=confidence, reasoning=f"Overbought: RSI={current_rsi:.1f}")
 
         return Signal(direction="HOLD", confidence=0.0, reasoning=f"RSI={current_rsi:.1f} - waiting for extremes")
 

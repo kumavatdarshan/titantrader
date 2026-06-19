@@ -43,6 +43,12 @@ class VolatilityBreakoutStrategy(Strategy):
                 reasoning=f"High volatility breakout down, vol_ratio={volatility_ratio:.2f}, momentum={momentum:.3f}"
             )
 
+        if price_position > 0.75 and volatility_ratio > 1.0:
+            return Signal(direction="BUY", confidence=0.45, reasoning="Price near 20-period high, elevated volatility")
+
+        if price_position < 0.25 and volatility_ratio > 1.0:
+            return Signal(direction="SELL", confidence=0.45, reasoning="Price near 20-period low, elevated volatility")
+
         return Signal(direction="HOLD", confidence=0.0, reasoning=f"Normal volatility (ratio={volatility_ratio:.2f})")
 
     def _calculate_atr(self, high, low, close, period=14):

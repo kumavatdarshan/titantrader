@@ -7,8 +7,8 @@ class EMACrossStrategy(Strategy):
 
     async def generate_signal(self, symbol: str, price_df: pd.DataFrame) -> Signal:
         """Enhanced EMA(9/21) crossover with trend confirmation."""
-        if len(price_df) < 50:
-            return Signal(direction="HOLD", confidence=0.0, reasoning="Not enough candles (need 50)")
+        if len(price_df) < 21:
+            return Signal(direction="HOLD", confidence=0.0, reasoning="Not enough candles (need 21)")
 
         close = price_df['Close']
         high = price_df['High']
@@ -35,6 +35,8 @@ class EMACrossStrategy(Strategy):
 
         crossover = prev_ema9 <= prev_ema21 and current_ema9 > current_ema21
         crossunder = prev_ema9 >= prev_ema21 and current_ema9 < current_ema21
+        near_crossover = abs(current_ema9 - current_ema21) / current_ema21 < 0.01
+        ema9_above_ema21 = current_ema9 > current_ema21
 
         if crossover and vol_ratio >= 0.8:
             if current_ema21 > current_ema50:
@@ -53,6 +55,12 @@ class EMACrossStrategy(Strategy):
                     confidence=final_conf,
                     reasoning=f"EMA9↓EMA21, downtrend (EMA21<{current_ema50:.2f}), vol:{vol_ratio:.2f}x"
                 )
+
+        if near_crossover and ema9_above_ema21 and current_ema21 > current_ema50:
+            return Signal(direction="BUY", confidence=0.45, reasoning="EMA9 near crossover above EMA21, uptrend")
+
+        if near_crossover and not ema9_above_ema21 and current_ema21 < current_ema50:
+            return Signal(direction="SELL", confidence=0.45, reasoning="EMA9 near crossover below EMA21, downtrend")
 
         return Signal(direction="HOLD", confidence=0.0, reasoning="No strong crossover or trend")
 

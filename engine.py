@@ -126,20 +126,20 @@ class TradingEngine:
 
     async def _execute_consensus_trade(self, session, symbol, price, signals):
         """Execute trade with confidence-weighted consensus."""
-        buy_signals = [(name, s) for name, s in signals if s.direction == "BUY" and s.confidence >= 0.4]
-        sell_signals = [(name, s) for name, s in signals if s.direction == "SELL" and s.confidence >= 0.4]
+        buy_signals = [(name, s) for name, s in signals if s.direction == "BUY" and s.confidence >= 0.3]
+        sell_signals = [(name, s) for name, s in signals if s.direction == "SELL" and s.confidence >= 0.3]
 
         buy_count = len(buy_signals)
         sell_count = len(sell_signals)
         buy_confidence = sum(s.confidence for _, s in buy_signals) / len(buy_signals) if buy_signals else 0
         sell_confidence = sum(s.confidence for _, s in sell_signals) / len(sell_signals) if sell_signals else 0
 
-        if buy_count >= 2 and buy_confidence >= 0.5:
-            logger.info(f"{symbol}: BUY consensus ({buy_count} strategies, confidence={buy_confidence:.2f})")
+        if buy_count >= 1 and buy_confidence >= 0.35:
+            logger.info(f"{symbol}: BUY signal ({buy_count} strategies, confidence={buy_confidence:.2f})")
             await self._place_buy_order(session, symbol, price)
 
-        elif sell_count >= 2 and sell_confidence >= 0.5:
-            logger.info(f"{symbol}: SELL consensus ({sell_count} strategies, confidence={sell_confidence:.2f})")
+        elif sell_count >= 1 and sell_confidence >= 0.35:
+            logger.info(f"{symbol}: SELL signal ({sell_count} strategies, confidence={sell_confidence:.2f})")
             await self._place_sell_order(session, symbol, price)
 
     async def _place_buy_order(self, session, symbol, price):

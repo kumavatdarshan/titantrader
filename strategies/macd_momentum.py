@@ -34,19 +34,28 @@ class MACDMomentumStrategy(Strategy):
         current_atr = atr.iloc[-1]
         confidence = abs(current_hist) / current_atr if current_atr > 0 else 0.0
 
-        if current_macd > current_signal and current_hist > prev_hist:
+        hist_positive = current_hist > 0
+        hist_increasing = current_hist > prev_hist
+
+        if current_macd > current_signal and hist_increasing:
             return Signal(
                 direction="BUY",
-                confidence=min(confidence, 1.0),
+                confidence=min(confidence * 0.8, 0.7),
                 reasoning=f"MACD bullish cross, histogram increasing. Confidence: {confidence:.2f}"
             )
 
         if current_macd < current_signal and current_hist < prev_hist:
             return Signal(
                 direction="SELL",
-                confidence=min(confidence, 1.0),
+                confidence=min(confidence * 0.8, 0.7),
                 reasoning=f"MACD bearish cross, histogram decreasing. Confidence: {confidence:.2f}"
             )
+
+        if hist_positive and hist_increasing:
+            return Signal(direction="BUY", confidence=0.45, reasoning="MACD histogram positive and increasing")
+
+        if not hist_positive and current_hist < prev_hist:
+            return Signal(direction="SELL", confidence=0.45, reasoning="MACD histogram negative and decreasing")
 
         return Signal(direction="HOLD", confidence=0.0, reasoning="No MACD momentum signal")
 
