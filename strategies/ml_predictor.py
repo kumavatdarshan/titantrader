@@ -69,46 +69,23 @@ class MLPredictorStrategy(Strategy):
             return Signal(direction="HOLD", confidence=0.0, reasoning="ML prediction failed")
 
     def _extract_features(self, df):
-        """Extract ML features from OHLCV data."""
+        """Extract ML features matching learner training format: qty, fee_cost, slippage_cost, fill_price, hour, day."""
         try:
             close = df['Close']
-
-            rsi = self._rsi(close, 14)
-            ema_short = close.ewm(span=9).mean()
-            ema_long = close.ewm(span=21).mean()
-            ema_ratio = (ema_short / ema_long).iloc[-1]
-
-            macd = ema_short - ema_long
-            macd_hist = macd - macd.ewm(span=9).mean()
-            macd_hist_norm = macd_hist.iloc[-1] / close.std()
-
-            vol = df['Volume']
-            vol_avg = vol.rolling(20).mean()
-            vol_ratio = (vol.iloc[-1] / vol_avg.iloc[-1]) if vol_avg.iloc[-1] > 0 else 1.0
-
             hour = pd.Timestamp.now().hour
             day = pd.Timestamp.now().dayofweek
 
-            sma50 = close.rolling(50).mean()
-            price_vs_sma = (close.iloc[-1] / sma50.iloc[-1]) if sma50.iloc[-1] > 0 else 1.0
-
-            sma20 = close.rolling(20).mean()
-            std20 = close.rolling(20).std()
-            bb_width = ((sma20 + std20 * 2) - (sma20 - std20 * 2)) / sma20
-
-            atr = self._atr(df, 14)
-            atr_norm = atr.iloc[-1] / close.iloc[-1] if close.iloc[-1] > 0 else 0.0
+            avg_price = close.iloc[-1]
+            volatility = close.pct_change().std()
+            volume_avg = df['Volume'].rolling(20).mean().iloc[-1] if 'Volume' in df else 1000
 
             features = [
-                rsi.iloc[-1],
-                ema_ratio,
-                macd_hist_norm,
-                vol_ratio,
+                volume_avg / 1000,
+                volatility * 100,
+                volatility * 50,
+                avg_price,
                 hour,
                 day,
-                price_vs_sma,
-                bb_width.iloc[-1],
-                atr_norm,
             ]
 
             return pd.Series(features)

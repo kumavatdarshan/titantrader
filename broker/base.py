@@ -43,3 +43,8 @@ class Broker(ABC):
     @abstractmethod
     async def cancel_order(self, order_id: str) -> bool:
         pass
+
+    @abstractmethod
+    async def check_stops_and_exits(self, current_prices: dict) -> list:
+        """Check and execute stop-loss and take-profit orders. Returns list of closed positions."""
+        pass

@@ -27,6 +27,11 @@ class AlpacaBroker(Broker):
         if not REST:
             raise ImportError("alpaca-trade-api library required")
 
+        # Validate credentials before initializing API client
+        if not Config.ALPACA_API_KEY or not Config.ALPACA_SECRET_KEY:
+            logger.error("❌ ALPACA_API_KEY or ALPACA_SECRET_KEY not configured")
+            raise ValueError("Alpaca credentials (API key and secret) are required. Set them in GitHub Secrets or .env file")
+
         # Initialize Alpaca API client
         base_url = Config.ALPACA_PAPER_URL if Config.TRADING_MODE == "alpaca_paper" else Config.ALPACA_LIVE_URL
         self.api = REST(

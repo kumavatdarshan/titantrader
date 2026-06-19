@@ -65,6 +65,6 @@ class RSIReversionStrategy(Strategy):
         delta = series.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
+        rs = gain / loss.replace(0, 1e-10)
         rsi = 100 - (100 / (1 + rs))
         return rsi
