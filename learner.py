@@ -8,7 +8,8 @@ from sqlalchemy import select
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from db import Trade, Lesson, Price
+from sklearn.metrics import f1_score
+from db import Trade, Lesson, Price, MLRun
 from config import Config
 import ta
 
@@ -22,7 +23,7 @@ class Learner:
 
     async def retrain_ml_model(self):
         """Nightly ML retraining pipeline."""
-        logger.info("Starting ML model retraining...")
+        logger.info("🤖 Starting ML model retraining...")
 
         async with self.session_factory() as session:
             result = await session.execute(select(Trade))
@@ -32,7 +33,12 @@ class Learner:
                 logger.warning(f"Only {len(trades)} trades. Need {Config.ML_MIN_TRADES_TO_TRAIN} to train.")
                 return
 
-            logger.info(f"Training on {len(trades)} trades")
+            profitable_trades = sum(1 for t in trades if (t.net_pnl or 0) > 0)
+            win_rate = profitable_trades / len(trades) if trades else 0
+            avg_win = sum(t.net_pnl for t in trades if (t.net_pnl or 0) > 0) / profitable_trades if profitable_trades > 0 else 0
+            avg_loss = abs(sum(t.net_pnl for t in trades if (t.net_pnl or 0) <= 0) / (len(trades) - profitable_trades)) if (len(trades) - profitable_trades) > 0 else 0
+
+            logger.info(f"Training on {len(trades)} trades | Win rate: {win_rate*100:.1f}% | Avg win: ${avg_win:.2f} | Avg loss: ${avg_loss:.2f}")
 
             X, y = await self._prepare_features(trades)
             if X is None or len(X) < 10:
@@ -49,27 +55,33 @@ class Learner:
             )
             model.fit(X_train, y_train)
 
+            y_pred = model.predict(X_test)
             accuracy = model.score(X_test, y_test)
+            f1 = f1_score(y_test, y_pred, zero_division=0)
             self.last_accuracy = accuracy
 
-            logger.info(f"Model accuracy: {accuracy*100:.2f}%")
+            logger.info(f"Model trained | Accuracy: {accuracy*100:.2f}% | F1: {f1:.4f} | Samples: {len(X)}")
+
+            model_path = Path("models/predictor.pkl")
+            model_path.parent.mkdir(exist_ok=True)
+            with open(model_path, 'wb') as f:
+                pickle.dump(model, f)
+
+            ml_run = MLRun(
+                accuracy=accuracy,
+                f1_score=f1,
+                n_samples=len(X),
+                top_features=str(sorted(enumerate(model.feature_importances_), key=lambda x: x[1], reverse=True)[:3]),
+                model_path=str(model_path),
+                was_deployed=accuracy >= Config.ML_MIN_ACCURACY
+            )
+            session.add(ml_run)
+            await session.commit()
 
             if accuracy >= Config.ML_MIN_ACCURACY:
-                model_path = Path("models/predictor.pkl")
-                model_path.parent.mkdir(exist_ok=True)
-                with open(model_path, 'wb') as f:
-                    pickle.dump(model, f)
-                logger.info(f"Model deployed to {model_path}")
-
-                top_features = sorted(
-                    enumerate(model.feature_importances_),
-                    key=lambda x: x[1],
-                    reverse=True
-                )[:3]
-                logger.info(f"Top features: {top_features}")
-
+                logger.info(f"✅ Model deployed to {model_path} (accuracy: {accuracy*100:.2f}%, F1: {f1:.4f})")
             else:
-                logger.warning(f"Accuracy {accuracy*100:.2f}% < {Config.ML_MIN_ACCURACY*100:.0f}% threshold")
+                logger.warning(f"⚠️ Model saved but not deployed (accuracy {accuracy*100:.2f}% < {Config.ML_MIN_ACCURACY*100:.0f}% threshold)")
 
     async def _prepare_features(self, trades):
         """Extract real technical features from trade history."""

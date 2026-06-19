@@ -8,7 +8,7 @@ load_dotenv()
 class Config:
     TRADING_MODE = os.getenv("TRADING_MODE", "local_paper")
     STARTING_CAPITAL = float(os.getenv("STARTING_CAPITAL", 10000))
-    SYMBOLS = os.getenv("SYMBOLS", "BTC-USD,ETH-USD,AAPL,TSLA").split(",")
+    SYMBOLS = os.getenv("SYMBOLS", "AAPL,TSLA,NVDA,SPY,MSFT").split(",")
     TRADE_INTERVAL_MINUTES = int(os.getenv("TRADE_INTERVAL_MINUTES", 5))
 
     MARKET_OPEN_UTC = os.getenv("MARKET_OPEN_UTC", "13:30")
@@ -34,9 +34,9 @@ class Config:
     DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", 8000))
     DASHBOARD_REFRESH_SECONDS = int(os.getenv("DASHBOARD_REFRESH_SECONDS", 30))
 
-    ML_MIN_ACCURACY = float(os.getenv("ML_MIN_ACCURACY", 0.55))
-    ML_MIN_TRADES_TO_TRAIN = int(os.getenv("ML_MIN_TRADES_TO_TRAIN", 50))
-    ML_RETRAIN_HOUR = int(os.getenv("ML_RETRAIN_HOUR", 2))
+    ML_MIN_ACCURACY = float(os.getenv("ML_MIN_ACCURACY", 0.60))
+    ML_MIN_TRADES_TO_TRAIN = int(os.getenv("ML_MIN_TRADES_TO_TRAIN", 30))
+    ML_RETRAIN_HOUR = int(os.getenv("ML_RETRAIN_HOUR", 20))
 
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 

@@ -165,6 +165,20 @@ class TradingEngine:
                 return
 
             order = await self.broker.place_order(symbol, "BUY", qty)
+            cost = qty * order.fill_price * (1 + Config.FEE_RATE)
+
+            trade = Trade(
+                symbol=symbol,
+                side="BUY",
+                qty=qty,
+                fill_price=order.fill_price,
+                fee_cost=qty * order.fill_price * Config.FEE_RATE,
+                slippage_cost=qty * order.fill_price * Config.SLIPPAGE_BPS / 10000,
+                gross_pnl=0.0,
+                net_pnl=0.0,
+                strategy_name="consensus"
+            )
+            session.add(trade)
 
             new_pos = Position(
                 symbol=symbol,
@@ -177,7 +191,7 @@ class TradingEngine:
             session.add(new_pos)
             await session.commit()
 
-            logger.info(f"{symbol}: BUY order filled. Qty={qty:.4f}, Price=${order.fill_price:.2f}")
+            logger.info(f"{symbol}: BUY order filled. Qty={qty:.4f}, Price=${order.fill_price:.2f}, Cost=${cost:.2f}")
 
         except Exception as e:
             logger.error(f"{symbol}: Buy order failed: {e}")
@@ -189,11 +203,24 @@ class TradingEngine:
             position = pos_result.scalar_one_or_none()
 
             if position:
+                pnl = (price - position.avg_entry_price) * position.qty
                 await self.broker.place_order(symbol, "SELL", position.qty)
+
+                trade = Trade(
+                    symbol=symbol,
+                    side="SELL",
+                    qty=position.qty,
+                    fill_price=price,
+                    gross_pnl=pnl,
+                    net_pnl=pnl * (1 - Config.FEE_RATE),
+                    strategy_name=position.strategy_name,
+                    entry_trade_id=position.id
+                )
+                session.add(trade)
                 await session.delete(position)
                 await session.flush()
                 await session.commit()
-                logger.info(f"{symbol}: Position closed. P&L: ${position.unrealized_pnl:.2f}")
+                logger.info(f"{symbol}: Position closed. P&L: ${pnl:.2f}")
 
         except Exception as e:
             logger.error(f"{symbol}: Sell order failed: {e}")
