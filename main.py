@@ -126,9 +126,10 @@ class TitanTrader:
 
         self.scheduler.add_job(
             self.learner.retrain_ml_model,
-            trigger=CronTrigger(hour=Config.ML_RETRAIN_HOUR, minute=0),
+            trigger=CronTrigger(hour='*/4', minute=0),
             id='ml_retrain'
         )
+        logger.info("ML model retrains every 4 hours")
 
         self.scheduler.add_job(
             self.backtester.run_full_backtest,

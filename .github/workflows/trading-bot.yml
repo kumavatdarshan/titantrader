@@ -1,0 +1,57 @@
+name: TitanTrader Cloud Bot
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Every 30 minutes during trading hours
+  workflow_dispatch:
+
+jobs:
+  trading:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -q -r requirements.txt
+
+    - name: Create directories
+      run: mkdir -p logs models
+
+    - name: Configure environment
+      run: |
+        cat > .env << 'ENDENV'
+        TRADING_MODE=${{ secrets.TRADING_MODE }}
+        ALPACA_API_KEY=${{ secrets.ALPACA_API_KEY }}
+        ALPACA_SECRET_KEY=${{ secrets.ALPACA_SECRET_KEY }}
+        STARTING_CAPITAL=${{ secrets.STARTING_CAPITAL }}
+        SYMBOLS=${{ secrets.SYMBOLS }}
+        TRADE_INTERVAL_MINUTES=30
+        ENDENV
+
+    - name: Run trading cycle
+      run: python run_cycle.py 2>&1 | tee -a logs/github-actions.log
+      continue-on-error: true
+
+    - name: Save state
+      if: always()
+      run: |
+        git config --local user.email "bot@titantrader.local"
+        git config --local user.name "TitanTrader"
+        git add -A
+        git commit -m "Auto: cycle $(date -u +%Y-%m-%d_%H:%M:%S)" --allow-empty
+        git push
+
+    - name: Summary
+      if: always()
+      run: echo "Trading cycle completed at $(date -u)"

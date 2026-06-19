@@ -15,24 +15,28 @@ class Backtester:
 
     async def run_full_backtest(self):
         """Walk-forward backtest of all strategies."""
-        logger.info("Starting full backtest...")
+        logger.info(f"Starting full backtest for {len(Config.SYMBOLS)} symbols...")
 
         async with self.session_factory() as session:
-            for symbol in Config.SYMBOLS[:3]:
+            results_list = []
+            for symbol in Config.SYMBOLS:
                 try:
                     data = await self._fetch_data(symbol)
                     if data is None:
                         continue
 
                     results = await self._walk_forward_test(symbol, data)
+                    results_list.append(results)
                     await self._update_strategy_scores(session, results)
+                    logger.info(f"Backtest {symbol}: WR={results['win_rate']*100:.1f}%, Sharpe={results['sharpe_ratio']:.2f}, DD={results['max_drawdown']*100:.1f}%")
 
                 except Exception as e:
                     logger.error(f"Backtest error for {symbol}: {e}")
 
             await session.commit()
 
-        logger.info("Backtest complete")
+        avg_wr = sum(r['win_rate'] for r in results_list) / len(results_list) if results_list else 0
+        logger.info(f"Backtest complete. Average win rate: {avg_wr*100:.1f}%")
 
     async def _fetch_data(self, symbol: str) -> pd.DataFrame:
         """Download 2 years of data."""

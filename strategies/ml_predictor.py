@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import logging
 from pathlib import Path
 from strategies.base import Strategy, Signal
@@ -9,7 +10,7 @@ logger = logging.getLogger(__name__)
 class MLPredictorStrategy(Strategy):
     name = "ml_predictor"
 
-    def __init__(self, min_accuracy=0.55):
+    def __init__(self, min_accuracy=0.58):
         self.min_accuracy = min_accuracy
         self.model = None
         self.last_accuracy = 0.0
@@ -29,15 +30,11 @@ class MLPredictorStrategy(Strategy):
                 self.model = None
 
     async def generate_signal(self, symbol: str, price_df: pd.DataFrame) -> Signal:
-        """ML-based buy/sell prediction."""
-        if self.model is None or self.last_accuracy < self.min_accuracy:
-            return Signal(
-                direction="HOLD",
-                confidence=0.0,
-                reasoning=f"ML model unavailable or accuracy {self.last_accuracy:.2f}% < {self.min_accuracy*100:.0f}%"
-            )
+        """ML-based prediction using market features."""
+        if self.model is None:
+            return Signal(direction="HOLD", confidence=0.0, reasoning="ML model not trained yet")
 
-        if len(price_df) < 50:
+        if len(price_df) < 30:
             return Signal(direction="HOLD", confidence=0.0, reasoning="Not enough history for ML")
 
         try:
@@ -45,68 +42,102 @@ class MLPredictorStrategy(Strategy):
             if features is None:
                 return Signal(direction="HOLD", confidence=0.0, reasoning="Could not extract features")
 
-            prediction = self.model.predict_proba(features.reshape(1, -1))
+            prediction = self.model.predict_proba([features])
             prob_profit = prediction[0][1]
 
-            if prob_profit > 0.60:
+            if prob_profit > 0.62:
                 return Signal(
                     direction="BUY",
-                    confidence=prob_profit,
-                    reasoning=f"ML predicts {prob_profit*100:.1f}% chance of profit"
+                    confidence=min(prob_profit, 0.85),
+                    reasoning=f"ML: {prob_profit*100:.1f}% profit probability"
                 )
 
-            if prob_profit < 0.40:
+            if prob_profit < 0.38:
                 return Signal(
                     direction="SELL",
-                    confidence=1 - prob_profit,
-                    reasoning=f"ML predicts {(1-prob_profit)*100:.1f}% chance of loss"
+                    confidence=min(1 - prob_profit, 0.85),
+                    reasoning=f"ML: {(1-prob_profit)*100:.1f}% loss probability"
                 )
 
-            return Signal(direction="HOLD", confidence=0.5, reasoning=f"ML neutral ({prob_profit*100:.1f}%)")
+            return Signal(direction="HOLD", confidence=0.0, reasoning=f"ML neutral ({prob_profit*100:.1f}%)")
 
         except Exception as e:
             logger.error(f"ML prediction error: {e}")
-            return Signal(direction="HOLD", confidence=0.0, reasoning="ML prediction failed")
+            return Signal(direction="HOLD", confidence=0.0, reasoning="ML error")
 
     def _extract_features(self, df):
-        """Extract ML features matching learner training format: qty, fee_cost, slippage_cost, fill_price, hour, day."""
+        """Extract same features as training: RSI, MACD, Bollinger, ATR, momentum, etc."""
         try:
-            close = df['Close']
-            hour = pd.Timestamp.now().hour
-            day = pd.Timestamp.now().dayofweek
+            closes = df['Close'].values
+            highs = df['High'].values
+            lows = df['Low'].values
+            volumes = df['Volume'].values if 'Volume' in df else np.ones(len(closes)) * 1000
 
-            avg_price = close.iloc[-1]
-            volatility = close.pct_change().std()
-            volume_avg = df['Volume'].rolling(20).mean().iloc[-1] if 'Volume' in df else 1000
+            if len(closes) < 26:
+                return None
+
+            rsi = self._calculate_rsi(closes)[-1]
+            macd, macd_signal = self._calculate_macd(closes)
+            bb_upper, bb_middle, bb_lower = self._calculate_bollinger(closes)
+            atr = self._calculate_atr(highs, lows, closes)[-1]
+
+            momentum = (closes[-1] - closes[-5]) / closes[-5] if len(closes) >= 5 else 0
+            volatility = np.std(np.diff(closes) / closes[:-1])
+            volume_ratio = volumes[-1] / np.mean(volumes) if len(volumes) > 0 else 1
+
+            bb_position = (closes[-1] - bb_lower[-1]) / (bb_upper[-1] - bb_lower[-1]) if (bb_upper[-1] - bb_lower[-1]) != 0 else 0.5
+
+            now = pd.Timestamp.now()
+            hour = now.hour
+            day = now.dayofweek
 
             features = [
-                volume_avg / 1000,
-                volatility * 100,
-                volatility * 50,
-                avg_price,
+                rsi,
+                macd[-1],
+                macd_signal[-1],
+                bb_position,
+                atr,
+                momentum,
+                volatility,
+                volume_ratio,
                 hour,
                 day,
             ]
 
-            return pd.Series(features)
+            return np.array(features)
 
         except Exception as e:
             logger.error(f"Feature extraction error: {e}")
             return None
 
-    def _rsi(self, series, period=14):
-        delta = series.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss.replace(0, 1e-10)
+    def _calculate_rsi(self, closes, period=14):
+        delta = np.diff(closes)
+        gain = np.where(delta > 0, delta, 0)
+        loss = np.where(delta < 0, -delta, 0)
+        avg_gain = np.convolve(gain, np.ones(period)/period, mode='valid')
+        avg_loss = np.convolve(loss, np.ones(period)/period, mode='valid')
+        rs = avg_gain / (avg_loss + 1e-10)
         rsi = 100 - (100 / (1 + rs))
-        return rsi.fillna(50)
+        return np.concatenate([np.full(period, 50), rsi])
 
-    def _atr(self, df, period=14):
-        high_low = df['High'] - df['Low']
-        high_close = abs(df['High'] - df['Close'].shift())
-        low_close = abs(df['Low'] - df['Close'].shift())
-        ranges = pd.concat([high_low, high_close, low_close], axis=1)
-        true_range = ranges.max(axis=1)
-        atr = true_range.rolling(period).mean()
+    def _calculate_macd(self, closes, fast=12, slow=26, signal=9):
+        ema_fast = pd.Series(closes).ewm(span=fast).mean().values
+        ema_slow = pd.Series(closes).ewm(span=slow).mean().values
+        macd = ema_fast - ema_slow
+        macd_signal = pd.Series(macd).ewm(span=signal).mean().values
+        return macd, macd_signal
+
+    def _calculate_bollinger(self, closes, period=20, num_std=2):
+        sma = pd.Series(closes).rolling(period).mean().values
+        std = pd.Series(closes).rolling(period).std().values
+        upper = sma + (std * num_std)
+        lower = sma - (std * num_std)
+        return upper, sma, lower
+
+    def _calculate_atr(self, highs, lows, closes, period=14):
+        tr1 = highs - lows
+        tr2 = np.abs(highs - np.roll(closes, 1))
+        tr3 = np.abs(lows - np.roll(closes, 1))
+        tr = np.maximum(tr1, np.maximum(tr2, tr3))
+        atr = pd.Series(tr).rolling(period).mean().values
         return atr

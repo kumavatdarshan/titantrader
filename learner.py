@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 from sqlalchemy import select
+import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -84,10 +85,25 @@ class Learner:
                 logger.warning(f"⚠️ Model saved but not deployed (accuracy {accuracy*100:.2f}% < {Config.ML_MIN_ACCURACY*100:.0f}% threshold)")
 
     async def _prepare_features(self, trades):
-        """Extract real technical features from trade history."""
+        """Extract real market technical features from price history at trade times."""
         try:
             if not trades:
                 return None, None
+
+            async with self.session_factory() as session:
+                price_result = await session.execute(select(Price))
+                prices = price_result.scalars().all()
+
+            if not prices:
+                logger.warning("No price history available for feature extraction")
+                return None, None
+
+            price_dict = {}
+            for p in prices:
+                key = (p.symbol, p.timestamp.date())
+                if key not in price_dict:
+                    price_dict[key] = []
+                price_dict[key].append(p)
 
             features_list = []
             targets = []
@@ -97,40 +113,93 @@ class Learner:
                     continue
 
                 entry_time = trade.timestamp
-                hour = entry_time.hour
-                day = entry_time.weekday()
+                trade_date = entry_time.date()
+                key = (trade.symbol, trade_date)
+
+                if key not in price_dict or len(price_dict[key]) < 14:
+                    continue
+
+                candles = sorted(price_dict[key], key=lambda x: x.timestamp)
+                closes = np.array([c.close for c in candles])
+                highs = np.array([c.high for c in candles])
+                lows = np.array([c.low for c in candles])
+                volumes = np.array([c.volume for c in candles])
+
+                rsi = self._calculate_rsi(closes)
+                macd, macd_signal = self._calculate_macd(closes)
+                bb_upper, bb_middle, bb_lower = self._calculate_bollinger(closes)
+                atr = self._calculate_atr(highs, lows, closes)
+                momentum = (closes[-1] - closes[-5]) / closes[-5] if len(closes) >= 5 else 0
+                volatility = np.std(np.diff(closes) / closes[:-1])
+                volume_ratio = volumes[-1] / np.mean(volumes) if len(volumes) > 0 else 1
 
                 features_list.append({
-                    'qty': trade.qty,
-                    'fill_price': trade.fill_price,
-                    'fee_cost': trade.fee_cost or 0,
-                    'slippage_cost': trade.slippage_cost or 0,
-                    'net_pnl': trade.net_pnl or 0,
-                    'hour_of_day': hour,
-                    'day_of_week': day,
+                    'rsi': rsi[-1],
+                    'macd': macd[-1],
+                    'macd_signal': macd_signal[-1],
+                    'bb_position': (closes[-1] - bb_lower[-1]) / (bb_upper[-1] - bb_lower[-1]) if (bb_upper[-1] - bb_lower[-1]) != 0 else 0.5,
+                    'atr': atr[-1],
+                    'momentum': momentum,
+                    'volatility': volatility,
+                    'volume_ratio': volume_ratio,
+                    'hour_of_day': entry_time.hour,
+                    'day_of_week': entry_time.weekday(),
                 })
                 targets.append(1 if (trade.net_pnl or 0) > 0 else 0)
 
-            if len(features_list) < 10:
-                logger.warning(f"Only {len(features_list)} trades with features. Need at least 10.")
+            if len(features_list) < 15:
+                logger.warning(f"Only {len(features_list)} trades with features. Need at least 15.")
                 return None, None
 
             df = pd.DataFrame(features_list)
             df = df.fillna(df.median())
 
-            X = df[['qty', 'fee_cost', 'slippage_cost', 'fill_price', 'hour_of_day', 'day_of_week']].values
+            X = df[['rsi', 'macd', 'macd_signal', 'bb_position', 'atr', 'momentum', 'volatility', 'volume_ratio', 'hour_of_day', 'day_of_week']].values
             y = np.array(targets)
 
             scaler = StandardScaler()
             X = scaler.fit_transform(X)
 
-            logger.info(f"Prepared {len(X)} training samples. Win rate: {y.mean()*100:.1f}%")
+            win_rate = y.mean() * 100
+            logger.info(f"Prepared {len(X)} training samples with market features. Win rate: {win_rate:.1f}%")
 
             return X, y
 
         except Exception as e:
             logger.error(f"Feature preparation error: {e}", exc_info=True)
             return None, None
+
+    def _calculate_rsi(self, closes, period=14):
+        delta = np.diff(closes)
+        gain = np.where(delta > 0, delta, 0)
+        loss = np.where(delta < 0, -delta, 0)
+        avg_gain = np.convolve(gain, np.ones(period)/period, mode='valid')
+        avg_loss = np.convolve(loss, np.ones(period)/period, mode='valid')
+        rs = avg_gain / (avg_loss + 1e-10)
+        rsi = 100 - (100 / (1 + rs))
+        return np.concatenate([np.full(period, 50), rsi])
+
+    def _calculate_macd(self, closes, fast=12, slow=26, signal=9):
+        ema_fast = pd.Series(closes).ewm(span=fast).mean().values
+        ema_slow = pd.Series(closes).ewm(span=slow).mean().values
+        macd = ema_fast - ema_slow
+        macd_signal = pd.Series(macd).ewm(span=signal).mean().values
+        return macd, macd_signal
+
+    def _calculate_bollinger(self, closes, period=20, num_std=2):
+        sma = pd.Series(closes).rolling(period).mean().values
+        std = pd.Series(closes).rolling(period).std().values
+        upper = sma + (std * num_std)
+        lower = sma - (std * num_std)
+        return upper, sma, lower
+
+    def _calculate_atr(self, highs, lows, closes, period=14):
+        tr1 = highs - lows
+        tr2 = np.abs(highs - np.roll(closes, 1))
+        tr3 = np.abs(lows - np.roll(closes, 1))
+        tr = np.maximum(tr1, np.maximum(tr2, tr3))
+        atr = pd.Series(tr).rolling(period).mean().values
+        return atr
 
     async def write_weekly_lesson(self):
         """Write weekly summary lesson."""
