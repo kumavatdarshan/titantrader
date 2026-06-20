@@ -2,7 +2,9 @@ name: TitanTrader 24/7 Trading Bot
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    # Run every 30 minutes during US market hours (9:30 AM - 4:00 PM ET)
+    # 9:30 AM ET = 1:30 PM UTC, 4:00 PM ET = 8:00 PM UTC
+    - cron: '0,30 13-19 * * 1-5'  # Mon-Fri, 1:30 PM - 7:30 PM UTC (covers 9:30 AM - 4:00 PM ET)
   workflow_dispatch:
 
 jobs:

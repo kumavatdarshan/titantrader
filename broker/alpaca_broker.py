@@ -137,7 +137,7 @@ class AlpacaBroker(Broker):
             # Wait for fill (poll Alpaca order status)
             filled = False
             fill_price = 0
-            for attempt in range(6):  # Poll for up to 30 seconds (5 second intervals)
+            for attempt in range(12):  # Poll for up to 60 seconds (5 second intervals)
                 await asyncio.sleep(5)
                 status = self.api.get_order(alpaca_order.id)
 
@@ -153,7 +153,7 @@ class AlpacaBroker(Broker):
                     raise ValueError(f"Order cancelled: {status.id}")
 
             if not filled:
-                logger.warning(f"Order {alpaca_order.id} not filled after 30s (checking status...)")
+                logger.warning(f"Order {alpaca_order.id} not filled after 60s (checking status...)")
                 final_status = self.api.get_order(alpaca_order.id)
                 final_qty = float(final_status.filled_qty) if final_status.filled_qty else 0
 
@@ -162,7 +162,7 @@ class AlpacaBroker(Broker):
                     logger.info(f"✓ Order eventually filled: {final_qty:.4f} {symbol} @ ${fill_price:.4f}")
                     filled = True
                 else:
-                    logger.error(f"Order {alpaca_order.id} not filled after 30s")
+                    logger.error(f"Order {alpaca_order.id} not filled after 60s")
                     try:
                         self.api.cancel_order(alpaca_order.id)
                     except:
