@@ -177,7 +177,11 @@ class TradingEngine:
                 logger.warning(f"{symbol}: Cannot size position (qty={qty:.4f})")
                 return
 
-            order = await self.broker.place_order(symbol, "BUY", qty)
+            order = await self.broker.place_order(
+                symbol, "BUY", qty,
+                stop_loss_pct=Config.STOP_LOSS_PCT,
+                take_profit_pct=Config.TAKE_PROFIT_PCT
+            )
             cost = qty * order.fill_price * (1 + Config.FEE_RATE)
 
             trade = Trade(

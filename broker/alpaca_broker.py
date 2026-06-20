@@ -119,8 +119,14 @@ class AlpacaBroker(Broker):
             logger.error(f"Failed to get account: {e}")
             raise
 
-    async def place_order(self, symbol: str, side: str, qty: float, order_type: str = "market") -> Order:
-        """Place order on Alpaca with real fills."""
+    async def place_order(self, symbol: str, side: str, qty: float, order_type: str = "market",
+                         entry_price: float = None, stop_loss_pct: float = 0.03,
+                         take_profit_pct: float = 0.06) -> Order:
+        """Place order on Alpaca with stop-loss and take-profit bracket.
+
+        For BUY orders: places entry + stop-loss (below) + take-profit (above)
+        For SELL orders: places simple exit order
+        """
         if side not in ("BUY", "SELL"):
             raise ValueError(f"Invalid side: {side}")
 
@@ -131,13 +137,13 @@ class AlpacaBroker(Broker):
                 qty=qty,
                 side=side.lower(),
                 type='market',
-                time_in_force='day'  # Valid for the trading day
+                time_in_force='day'
             )
 
             # Wait for fill (poll Alpaca order status)
             filled = False
             fill_price = 0
-            for attempt in range(12):  # Poll for up to 60 seconds (5 second intervals)
+            for attempt in range(12):  # Poll for up to 60 seconds
                 await asyncio.sleep(5)
                 status = self.api.get_order(alpaca_order.id)
 
@@ -153,7 +159,7 @@ class AlpacaBroker(Broker):
                     raise ValueError(f"Order cancelled: {status.id}")
 
             if not filled:
-                logger.warning(f"Order {alpaca_order.id} not filled after 60s (checking status...)")
+                logger.warning(f"Order {alpaca_order.id} not filled after 60s")
                 final_status = self.api.get_order(alpaca_order.id)
                 final_qty = float(final_status.filled_qty) if final_status.filled_qty else 0
 
@@ -169,6 +175,42 @@ class AlpacaBroker(Broker):
                         pass
                     raise TimeoutError(f"Order timeout: {symbol}")
 
+            # For BUY orders: place stop-loss and take-profit bracket orders
+            if side == "BUY":
+                stop_price = fill_price * (1 - stop_loss_pct)
+                profit_price = fill_price * (1 + take_profit_pct)
+
+                logger.info(f"📊 Placing bracket orders for {symbol}:")
+                logger.info(f"   Entry: ${fill_price:.2f} | Stop: ${stop_price:.2f} | Target: ${profit_price:.2f}")
+
+                try:
+                    # Place stop-loss order
+                    self.api.submit_order(
+                        symbol=symbol,
+                        qty=qty,
+                        side='sell',
+                        type='stop',
+                        stop_price=stop_price,
+                        time_in_force='gtc'  # Good til cancelled
+                    )
+                    logger.info(f"✓ Stop-loss placed @ ${stop_price:.2f}")
+                except Exception as e:
+                    logger.error(f"Failed to place stop-loss: {e}")
+
+                try:
+                    # Place take-profit order
+                    self.api.submit_order(
+                        symbol=symbol,
+                        qty=qty,
+                        side='sell',
+                        type='limit',
+                        limit_price=profit_price,
+                        time_in_force='gtc'  # Good til cancelled
+                    )
+                    logger.info(f"✓ Take-profit placed @ ${profit_price:.2f}")
+                except Exception as e:
+                    logger.error(f"Failed to place take-profit: {e}")
+
             # Record the trade in our DB
             async with self.session_factory() as session:
                 trade = Trade(
@@ -176,8 +218,8 @@ class AlpacaBroker(Broker):
                     side=side,
                     qty=qty,
                     fill_price=fill_price,
-                    slippage_cost=0,  # Alpaca reports actual fill price
-                    fee_cost=0,  # Alpaca paper has no fees
+                    slippage_cost=0,
+                    fee_cost=0,
                     strategy_name="alpaca_engine",
                     timestamp=datetime.utcnow()
                 )
@@ -233,7 +275,51 @@ class AlpacaBroker(Broker):
             return False
 
     async def check_stops_and_exits(self, current_prices: dict):
-        """Check stop-loss and take-profit via Alpaca bracket orders."""
-        # Alpaca handles stop-loss and take-profit automatically via bracket orders
-        # This is a no-op here since we use bracket order placement in place_order
-        pass
+        """Monitor open positions and close them if they've moved beyond entry.
+
+        Alpaca handles stop-loss and take-profit via bracket orders.
+        This function monitors when positions are closed and cleans up the database.
+        """
+        try:
+            # Get current positions from Alpaca
+            alpaca_positions = self.api.list_positions()
+            alpaca_symbols = {p.symbol for p in alpaca_positions}
+
+            # Get positions from our database
+            async with self.session_factory() as session:
+                db_positions = (await session.execute(select(Position))).scalars().all()
+
+                # Check each DB position
+                for db_pos in db_positions:
+                    if db_pos.symbol not in alpaca_symbols:
+                        # Position was closed (by stop-loss or take-profit)
+                        logger.info(f"✓ Position closed: {db_pos.symbol}")
+
+                        # Calculate P&L
+                        current_price = current_prices.get(db_pos.symbol, db_pos.avg_entry_price)
+                        if db_pos.qty > 0:
+                            pnl = (current_price - db_pos.avg_entry_price) * db_pos.qty
+                        else:
+                            pnl = (db_pos.avg_entry_price - current_price) * abs(db_pos.qty)
+
+                        # Create exit trade record
+                        exit_side = "SELL" if db_pos.qty > 0 else "BUY"
+                        exit_trade = Trade(
+                            symbol=db_pos.symbol,
+                            side=exit_side,
+                            qty=abs(db_pos.qty),
+                            fill_price=current_price,
+                            net_pnl=pnl,
+                            strategy_name="exit",
+                            timestamp=datetime.utcnow()
+                        )
+                        session.add(exit_trade)
+
+                        # Remove from positions
+                        await session.delete(db_pos)
+                        logger.info(f"   P&L: ${pnl:+.2f}")
+
+                await session.commit()
+
+        except Exception as e:
+            logger.error(f"Error checking stops and exits: {e}")
