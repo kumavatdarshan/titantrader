@@ -34,6 +34,12 @@ class TradingEngine:
             logger.info("TRADING CYCLE START")
             logger.info("=" * 60)
 
+            # Skip if outside market hours
+            current_hour_utc = datetime.utcnow().hour
+            if not (Config.TRADING_HOURS_START <= current_hour_utc < Config.TRADING_HOURS_END):
+                logger.warning(f"Outside trading hours ({current_hour_utc}:00 UTC). Skipping cycle.")
+                return
+
             await self._check_drawdown_guard()
             if self.is_paused:
                 logger.warning(f"TRADING PAUSED: {self.pause_reason}")
