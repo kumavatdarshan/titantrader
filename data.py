@@ -2,30 +2,19 @@ import logging
 from datetime import datetime, timedelta
 import random
 import asyncio
-import yfinance as yf
+import time
 import pandas as pd
 from config import Config
 
 logger = logging.getLogger(__name__)
 
-
-def retry_on_timeout(max_retries=3, delay=1.0):
-    """Decorator to retry async functions on timeout/connection errors."""
-    def decorator(func):
-        async def wrapper(*args, **kwargs):
-            for attempt in range(max_retries):
-                try:
-                    return await func(*args, **kwargs)
-                except (TimeoutError, ConnectionError, Exception) as e:
-                    if attempt < max_retries - 1:
-                        wait_time = delay * (2 ** attempt)  # Exponential backoff
-                        logger.warning(f"Attempt {attempt + 1}/{max_retries} failed for {func.__name__}: {e}. Retrying in {wait_time}s...")
-                        await asyncio.sleep(wait_time)
-                    else:
-                        logger.error(f"All {max_retries} retries failed for {func.__name__}")
-                        raise
-        return wrapper
-    return decorator
+# User agents to rotate and avoid blocks
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X)',
+]
 
 MOCK_PRICES = {
     "BTC-USD": 67000,
@@ -51,209 +40,293 @@ MOCK_PRICES = {
     "NIFTY50": 24000,
 }
 
+# Cache for recently failed symbols (avoid retrying too quickly)
+_failed_symbols = {}
 
-@retry_on_timeout(max_retries=2, delay=0.5)
+
 async def fetch_price(symbol: str, use_mock: bool = True) -> dict:
-    """Fetch price from yfinance with retry logic. Falls back to mock data if unavailable."""
+    """
+    Fetch price with robust error handling and retries.
+    Fallback chain: yfinance → mock data → error
+    """
     try:
-        # Fallback to yfinance (with .NS suffix for Indian NSE stocks)
         import yfinance as yf
-        # For NSE, append .NS if not already present
+
+        # Check if recently failed
+        if symbol in _failed_symbols:
+            fail_time, fail_count = _failed_symbols[symbol]
+            if time.time() - fail_time < 300:  # 5 min cooldown
+                logger.debug(f"{symbol}: In cooldown ({fail_count} failures), using mock data")
+                return _get_mock_price(symbol)
+
+        # Determine yfinance symbol
         indian_symbols = {'RELIANCE', 'INFY', 'TCS', 'HDFCBANK', 'ICICIBANK', 'WIPRO', 'SBIN', 'KOTAKBANK', 'AXISBANK', 'NIFTY50'}
         yf_symbol = symbol if symbol.endswith(".NS") else (symbol + ".NS" if symbol in indian_symbols else symbol)
 
-        # Add user-agent to prevent blocking
-        ticker = yf.Ticker(yf_symbol, session=None)
-        data = yf.download(yf_symbol, period="5d", progress=False, timeout=5)
+        logger.debug(f"Fetching {yf_symbol} from yfinance...")
 
-        if data.empty:
-            raise Exception(f"No data for {symbol}")
+        # Retry logic with exponential backoff
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Set random user-agent
+                session = None
+                try:
+                    import requests
+                    session = requests.Session()
+                    session.headers['User-Agent'] = random.choice(USER_AGENTS)
+                except:
+                    pass
 
-        latest = data.iloc[-1]
-        price = float(latest['Close'])
-        timestamp = data.index[-1].to_pydatetime()
+                # Download with timeout
+                data = yf.download(
+                    yf_symbol,
+                    period="5d",
+                    progress=False,
+                    timeout=10,
+                    session=session
+                )
 
-        now = datetime.utcnow()
-        age_minutes = (now - timestamp).total_seconds() / 60
-        is_stale = age_minutes > 10
+                if data.empty:
+                    raise Exception(f"Empty data returned from yfinance")
 
-        return {
-            'price': price,
-            'timestamp': timestamp,
-            'source': 'yfinance',
-            'is_stale': is_stale,
-            'volume': int(latest.get('Volume', 0))
-        }
-    except Exception as e:
+                latest = data.iloc[-1]
+                price = float(latest['Close'])
+                timestamp = data.index[-1].to_pydatetime()
+
+                # Check if data is stale
+                now = datetime.utcnow()
+                age_minutes = (now - timestamp).total_seconds() / 60
+                is_stale = age_minutes > 30  # 30 min stale threshold
+
+                # Clear failed cache on success
+                if symbol in _failed_symbols:
+                    del _failed_symbols[symbol]
+
+                logger.info(f"{symbol}: {price:.2f} (age: {age_minutes:.0f}m, source: yfinance)")
+
+                return {
+                    'price': price,
+                    'timestamp': timestamp,
+                    'source': 'yfinance',
+                    'is_stale': is_stale,
+                    'volume': int(latest.get('Volume', 0))
+                }
+
+            except Exception as e:
+                error_msg = str(e)
+
+                # Detect specific errors
+                if '404' in error_msg or 'not found' in error_msg.lower():
+                    logger.error(f"{symbol}: Not found on yfinance (404)")
+                    break  # Don't retry, symbol doesn't exist
+
+                elif 'connection' in error_msg.lower() or 'timeout' in error_msg.lower():
+                    logger.warning(f"{symbol}: Network error (attempt {attempt+1}/{max_retries}): {error_msg}")
+                    if attempt < max_retries - 1:
+                        wait = (2 ** attempt) + random.uniform(0, 1)  # Exponential backoff with jitter
+                        logger.warning(f"Retrying in {wait:.1f}s...")
+                        await asyncio.sleep(wait)
+                    continue
+
+                else:
+                    logger.warning(f"{symbol}: Error (attempt {attempt+1}/{max_retries}): {error_msg}")
+                    if attempt < max_retries - 1:
+                        wait = (2 ** attempt) + random.uniform(0, 1)
+                        await asyncio.sleep(wait)
+                    continue
+
+        # All retries failed
+        logger.warning(f"{symbol}: yfinance failed after {max_retries} attempts")
+        _failed_symbols[symbol] = (time.time(), _failed_symbols.get(symbol, (0, 0))[1] + 1)
+
+        # Fallback to mock
         if use_mock:
-            logger.warning(f"Failed to fetch {symbol} from yfinance: {e}. Using mock data.")
-            if symbol not in MOCK_PRICES:
-                raise ValueError(f"Symbol {symbol} not in mock data and yfinance failed")
-
-            base_price = MOCK_PRICES[symbol]
-            noise = random.uniform(-0.005, 0.005)
-            price = base_price * (1 + noise)
-
-            return {
-                'price': price,
-                'timestamp': datetime.utcnow(),
-                'source': 'mock',
-                'is_stale': False,
-                'volume': random.randint(1000000, 10000000)
-            }
+            logger.info(f"{symbol}: Using mock data (fallback)")
+            return _get_mock_price(symbol)
         else:
-            logger.error(f"Failed to fetch {symbol} and mock disabled. Raising error.")
-            raise
+            raise Exception(f"Failed to fetch {symbol} and mock disabled")
+
+    except Exception as e:
+        logger.error(f"Fatal error fetching {symbol}: {e}")
+        if use_mock:
+            return _get_mock_price(symbol)
+        raise
+
+
+def _get_mock_price(symbol: str) -> dict:
+    """Get mock price for a symbol."""
+    if symbol not in MOCK_PRICES:
+        raise ValueError(f"Symbol {symbol} not in mock data")
+
+    base_price = MOCK_PRICES[symbol]
+    noise = random.uniform(-0.01, 0.01)  # 1% random variation
+    price = base_price * (1 + noise)
+
+    return {
+        'price': price,
+        'timestamp': datetime.utcnow(),
+        'source': 'mock',
+        'is_stale': False,
+        'volume': random.randint(1000000, 10000000)
+    }
 
 
 async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
-    """Fetch OHLCV candles from Alpaca or yfinance (with .NS suffix for NSE), with mock fallback."""
-
-    # Try Alpaca if in Alpaca mode
-    if Config.TRADING_MODE.startswith("alpaca"):
-        try:
-            from alpaca_trade_api.rest import REST
-            base_url = Config.ALPACA_PAPER_URL if Config.TRADING_MODE == "alpaca_paper" else Config.ALPACA_LIVE_URL
-            api = REST(
-                key_id=Config.ALPACA_API_KEY,
-                secret_key=Config.ALPACA_SECRET_KEY,
-                base_url=base_url
-            )
-
-            # Convert period to timeframe and start date
-            if period == "1mo":
-                timeframe = "1Day"
-                start = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
-            elif period == "3mo":
-                timeframe = "1Day"
-                start = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d")
-            else:
-                timeframe = "1Day"
-                start = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
-
-            # Get bars from Alpaca
-            bars = api.get_bars(
-                symbol,
-                timeframe,
-                start=start,
-                limit=100,
-                adjustment='all'
-            )
-
-            if bars is not None and len(bars) > 0:
-                data = []
-
-                if isinstance(bars, dict):
-                    bars_list = list(bars.values())
-                else:
-                    bars_list = list(bars)
-
-                for bar in bars_list:
-                    data.append({
-                        'Date': pd.Timestamp(bar.t) if hasattr(bar, 't') else pd.Timestamp(bar['t']),
-                        'Open': float(bar.o if hasattr(bar, 'o') else bar['o']),
-                        'High': float(bar.h if hasattr(bar, 'h') else bar['h']),
-                        'Low': float(bar.l if hasattr(bar, 'l') else bar['l']),
-                        'Close': float(bar.c if hasattr(bar, 'c') else bar['c']),
-                        'Volume': float(bar.v if hasattr(bar, 'v') else bar['v'])
-                    })
-
-                if len(data) > 0:
-                    df = pd.DataFrame(data)
-                    df = df.sort_values('Date').reset_index(drop=True)
-                    logger.info(f"✓ Fetched {len(df)} bars for {symbol} from Alpaca")
-
-                    return {
-                        'symbol': symbol,
-                        'data': df,
-                        'rows': len(df),
-                        'source': 'alpaca',
-                        'success': True
-                    }
-
-            raise Exception(f"No bars from Alpaca for {symbol}")
-
-        except Exception as e:
-            logger.warning(f"Failed to fetch {symbol} from Alpaca: {e}. Falling back to yfinance...")
-
-    # Fallback to yfinance
+    """
+    Fetch OHLCV candles with robust fallback chain.
+    Alpaca → yfinance → synthetic mock data
+    """
     try:
-        # For Indian NSE stocks, append .NS suffix if not already present
-        yf_symbol = symbol if symbol.endswith(".NS") else symbol
-        # Check if it's an Indian stock symbol by looking in MOCK_PRICES
-        if symbol in MOCK_PRICES and symbol not in ("BTC-USD", "ETH-USD", "SPY", "QQQ"):
-            yf_symbol = symbol + ".NS" if not symbol.endswith(".NS") else symbol
+        import yfinance as yf
 
-        df = yf.download(yf_symbol, period=period, progress=False, timeout=5)
+        # Try Alpaca first if configured
+        if Config.TRADING_MODE.startswith("alpaca") and Config.ALPACA_API_KEY:
+            try:
+                logger.debug(f"Fetching {symbol} from Alpaca...")
+                from alpaca_trade_api.rest import REST
 
-        if df.empty:
-            logger.error(f"No OHLCV data for {symbol}")
-            raise Exception(f"No data for {symbol}")
+                base_url = Config.ALPACA_PAPER_URL if Config.TRADING_MODE == "alpaca_paper" else Config.ALPACA_LIVE_URL
+                api = REST(
+                    key_id=Config.ALPACA_API_KEY,
+                    secret_key=Config.ALPACA_SECRET_KEY,
+                    base_url=base_url,
+                    raw_data=True
+                )
 
-        df['Date'] = df.index
-        df = df.reset_index(drop=True)
+                # Convert period to timeframe and start date
+                if period == "1mo":
+                    timeframe = "1Day"
+                    start = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+                elif period == "3mo":
+                    timeframe = "1Day"
+                    start = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d")
+                else:
+                    timeframe = "1Day"
+                    start = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
 
-        return {
-            'symbol': symbol,
-            'data': df,
-            'rows': len(df),
-            'source': 'yfinance',
-            'success': True
-        }
-    except Exception as e:
-        logger.warning(f"Failed to fetch OHLCV for {symbol} from yfinance: {e}")
+                bars = api.get_bars(
+                    symbol,
+                    timeframe,
+                    start=start,
+                    limit=100,
+                    adjustment='all'
+                )
 
-        # Last resort: synthetic data for testing
-        try:
-            logger.info(f"Generating synthetic OHLCV data for {symbol} (paper testing)")
-            if symbol not in MOCK_PRICES:
+                if bars and len(bars) > 0:
+                    data = []
+                    bars_list = list(bars.values()) if isinstance(bars, dict) else list(bars)
+
+                    for bar in bars_list:
+                        data.append({
+                            'Date': pd.Timestamp(bar.t) if hasattr(bar, 't') else pd.Timestamp(bar['t']),
+                            'Open': float(bar.o if hasattr(bar, 'o') else bar['o']),
+                            'High': float(bar.h if hasattr(bar, 'h') else bar['h']),
+                            'Low': float(bar.l if hasattr(bar, 'l') else bar['l']),
+                            'Close': float(bar.c if hasattr(bar, 'c') else bar['c']),
+                            'Volume': float(bar.v if hasattr(bar, 'v') else bar['v'])
+                        })
+
+                    if data:
+                        df = pd.DataFrame(data)
+                        df = df.sort_values('Date').reset_index(drop=True)
+                        logger.info(f"Fetched {len(df)} bars for {symbol} from Alpaca")
+                        return {
+                            'symbol': symbol,
+                            'data': df,
+                            'rows': len(df),
+                            'source': 'alpaca',
+                            'success': True
+                        }
+
+            except Exception as e:
+                logger.warning(f"Alpaca fetch failed: {e}, falling back to yfinance...")
+
+        # Fallback to yfinance with retry
+        logger.debug(f"Fetching {symbol} from yfinance...")
+
+        indian_symbols = {'RELIANCE', 'INFY', 'TCS', 'HDFCBANK', 'ICICIBANK', 'WIPRO', 'SBIN', 'KOTAKBANK', 'AXISBANK', 'NIFTY50'}
+        yf_symbol = symbol if symbol.endswith(".NS") else (symbol + ".NS" if symbol in indian_symbols else symbol)
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                df = yf.download(yf_symbol, period=period, progress=False, timeout=10)
+
+                if df.empty:
+                    raise Exception("Empty data")
+
+                df['Date'] = df.index
+                df = df.reset_index(drop=True)
+
+                logger.info(f"Fetched {len(df)} bars for {symbol} from yfinance")
                 return {
                     'symbol': symbol,
-                    'data': None,
-                    'rows': 0,
-                    'source': 'none',
-                    'success': False,
-                    'error': str(e)
+                    'data': df,
+                    'rows': len(df),
+                    'source': 'yfinance',
+                    'success': True
                 }
 
-            base_price = MOCK_PRICES[symbol]
-            dates = pd.date_range(end=datetime.utcnow(), periods=100, freq='1D')
+            except Exception as e:
+                logger.warning(f"yfinance attempt {attempt+1}/{max_retries} failed: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep((2 ** attempt) + random.uniform(0, 1))
 
-            data = []
-            current_price = base_price
-            for date in dates:
-                daily_change = random.uniform(-0.02, 0.02)
-                open_price = current_price * (1 - random.uniform(0, 0.005))
-                high = current_price * (1 + abs(daily_change) + random.uniform(0, 0.01))
-                low = current_price * (1 - abs(daily_change) - random.uniform(0, 0.01))
-                close = current_price * (1 + daily_change)
-                current_price = close
-
-                data.append({
-                    'Date': date,
-                    'Open': open_price,
-                    'High': high,
-                    'Low': low,
-                    'Close': close,
-                    'Volume': random.randint(1000000, 50000000)
-                })
-
-            df = pd.DataFrame(data)
-
-            return {
-                'symbol': symbol,
-                'data': df,
-                'rows': len(df),
-                'source': 'mock_synthetic',
-                'success': True
-            }
-        except Exception as mock_e:
-            logger.error(f"Failed to generate synthetic OHLCV for {symbol}: {mock_e}")
+        # Generate synthetic data as last resort
+        logger.warning(f"All real data sources failed for {symbol}, using synthetic data")
+        if symbol not in MOCK_PRICES:
+            logger.error(f"Symbol {symbol} not in mock prices")
             return {
                 'symbol': symbol,
                 'data': None,
                 'rows': 0,
                 'source': 'none',
                 'success': False,
-                'error': str(e)
+                'error': f"Symbol {symbol} not available"
             }
+
+        logger.info(f"Generating synthetic OHLCV for {symbol}")
+        base_price = MOCK_PRICES[symbol]
+        dates = pd.date_range(end=datetime.utcnow(), periods=100, freq='1D')
+
+        data = []
+        current_price = base_price
+        for date in dates:
+            daily_change = random.uniform(-0.03, 0.03)
+            open_price = current_price * (1 - random.uniform(0, 0.01))
+            high = current_price * (1 + abs(daily_change) + random.uniform(0, 0.02))
+            low = current_price * (1 - abs(daily_change) - random.uniform(0, 0.02))
+            close = current_price * (1 + daily_change)
+            current_price = close
+
+            data.append({
+                'Date': date,
+                'Open': open_price,
+                'High': high,
+                'Low': low,
+                'Close': close,
+                'Volume': random.randint(1000000, 50000000)
+            })
+
+        df = pd.DataFrame(data)
+        logger.info(f"Generated {len(df)} synthetic bars for {symbol}")
+
+        return {
+            'symbol': symbol,
+            'data': df,
+            'rows': len(df),
+            'source': 'synthetic_mock',
+            'success': True
+        }
+
+    except Exception as e:
+        logger.error(f"Fatal error in fetch_ohlcv_candles for {symbol}: {e}")
+        return {
+            'symbol': symbol,
+            'data': None,
+            'rows': 0,
+            'source': 'none',
+            'success': False,
+            'error': str(e)
+        }
