@@ -1,4 +1,4 @@
-name: TitanTrader - Live Trading
+name: TitanTrader - NSE Trading Cycle (Paper Mode)
 
 on:
   schedule:

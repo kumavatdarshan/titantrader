@@ -1,4 +1,4 @@
-name: TitanTrader - ML Training
+name: TitanTrader - ML Model Training (NSE)
 
 on:
   schedule:

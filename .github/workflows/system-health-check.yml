@@ -1,4 +1,4 @@
-name: TitanTrader - Health Check
+name: TitanTrader - System Health Check (NSE)
 
 on:
   schedule:
