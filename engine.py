@@ -147,11 +147,11 @@ class TradingEngine:
         buy_confidence = sum(s.confidence for _, s in buy_signals) / len(buy_signals) if buy_signals else 0
         sell_confidence = sum(s.confidence for _, s in sell_signals) / len(sell_signals) if sell_signals else 0
 
-        if buy_count >= 1 and buy_confidence >= 0.30:
+        if buy_count >= 1 and buy_confidence >= 0.25:
             logger.info(f"{symbol}: BUY signal ({buy_count} strategies, confidence={buy_confidence:.2f})")
             await self._place_buy_order(session, symbol, price)
 
-        elif sell_count >= 1 and sell_confidence >= 0.30:
+        elif sell_count >= 1 and sell_confidence >= 0.25:
             logger.info(f"{symbol}: SELL signal ({sell_count} strategies, confidence={sell_confidence:.2f})")
             await self._place_sell_order(session, symbol, price)
         else:
@@ -159,7 +159,7 @@ class TradingEngine:
 
     async def _calculate_trade_stats(self, session):
         """Calculate win rate and avg win/loss from closed trades."""
-        trades = (await session.execute(select(Trade).where(Trade.net_pnl != 0.0))).scalars().all()
+        trades = (await session.execute(select(Trade))).scalars().all()
 
         if len(trades) < 10:
             return 0.52, 100, 100  # Default conservative stats

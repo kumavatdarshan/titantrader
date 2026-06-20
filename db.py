@@ -43,7 +43,7 @@ class Trade(Base):
 class Position(Base):
     __tablename__ = "positions"
     id = Column(Integer, primary_key=True)
-    symbol = Column(String(20), nullable=False, unique=True)
+    symbol = Column(String(20), nullable=False)
     qty = Column(Float, nullable=False)
     avg_entry_price = Column(Float, nullable=False)
     opened_at = Column(DateTime, default=datetime.utcnow, nullable=False)

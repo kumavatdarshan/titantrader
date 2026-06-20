@@ -3,6 +3,7 @@ import logging
 import asyncio
 import signal
 from datetime import datetime
+from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,10 @@ from threading import Thread
 import sys
 
 import io
+
+# Create required directories
+Path('logs').mkdir(exist_ok=True)
+Path('models').mkdir(exist_ok=True)
 
 logging.basicConfig(
     level=Config.LOG_LEVEL,

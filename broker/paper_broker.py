@@ -75,12 +75,14 @@ class PaperBroker(Broker):
         if price_data['is_stale']:
             raise DataUnavailableError(f"Cannot trade {symbol} — stale price (>{10}min old)")
 
-        slippage_multiplier = 1 + (Config.SLIPPAGE_BPS / 10000)
+        slippage_bps_ratio = Config.SLIPPAGE_BPS / 10000
         if side == "BUY":
-            fill_price = price * slippage_multiplier
+            # Buy: price goes up due to slippage
+            fill_price = price * (1 + slippage_bps_ratio)
             slippage_cost = (fill_price - price) * qty
         else:
-            fill_price = price / slippage_multiplier
+            # Sell: price goes down due to slippage
+            fill_price = price * (1 - slippage_bps_ratio)
             slippage_cost = (price - fill_price) * qty
 
         trade_value = abs(qty * fill_price)
