@@ -316,7 +316,7 @@ class AlpacaBroker(Broker):
                         session.add(exit_trade)
 
                         # Remove from positions
-                        await session.delete(db_pos)
+                        session.delete(db_pos)
                         logger.info(f"   P&L: ${pnl:+.2f}")
 
                 await session.commit()

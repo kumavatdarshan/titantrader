@@ -148,6 +148,26 @@ class TradingEngine:
         else:
             logger.debug(f"{symbol}: No consensus (BUY:{buy_count}@{buy_confidence:.2f}, SELL:{sell_count}@{sell_confidence:.2f})")
 
+    async def _calculate_trade_stats(self, session):
+        """Calculate win rate and avg win/loss from closed trades."""
+        trades = (await session.execute(select(Trade).where(Trade.net_pnl != 0.0))).scalars().all()
+
+        if len(trades) < 10:
+            return 0.52, 100, 100  # Default conservative stats
+
+        winners = [t.net_pnl for t in trades if t.net_pnl > 0]
+        losers = [abs(t.net_pnl) for t in trades if t.net_pnl < 0]
+
+        if not winners or not losers:
+            return 0.52, 100, 100
+
+        win_rate = len(winners) / len(trades)
+        avg_win = sum(winners) / len(winners) if winners else 100
+        avg_loss = sum(losers) / len(losers) if losers else 100
+
+        logger.info(f"Trade stats: Win rate={win_rate:.1%}, Avg win=${avg_win:.2f}, Avg loss=${avg_loss:.2f}")
+        return win_rate, avg_win, avg_loss
+
     async def _place_buy_order(self, session, symbol, price):
         """Place a buy order if conditions met."""
         try:
@@ -162,13 +182,16 @@ class TradingEngine:
             positions = await session.execute(select(Position))
             pos_list = positions.scalars().all()
 
+            # Get real trade statistics
+            win_rate, avg_win, avg_loss = await self._calculate_trade_stats(session)
+
             qty = PositionSizer.calculate_position_size(
                 portfolio_value=account['portfolio_value'],
                 cash=account['cash'],
                 symbol=symbol,
-                win_rate=0.52,
-                avg_win=100,
-                avg_loss=100,
+                win_rate=win_rate,
+                avg_win=avg_win,
+                avg_loss=avg_loss,
                 current_price=price,
                 existing_positions={p.symbol: p for p in pos_list}
             )
@@ -182,20 +205,6 @@ class TradingEngine:
                 stop_loss_pct=Config.STOP_LOSS_PCT,
                 take_profit_pct=Config.TAKE_PROFIT_PCT
             )
-            cost = qty * order.fill_price * (1 + Config.FEE_RATE)
-
-            trade = Trade(
-                symbol=symbol,
-                side="BUY",
-                qty=qty,
-                fill_price=order.fill_price,
-                fee_cost=qty * order.fill_price * Config.FEE_RATE,
-                slippage_cost=qty * order.fill_price * Config.SLIPPAGE_BPS / 10000,
-                gross_pnl=0.0,
-                net_pnl=0.0,
-                strategy_name="consensus"
-            )
-            session.add(trade)
 
             new_pos = Position(
                 symbol=symbol,

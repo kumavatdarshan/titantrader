@@ -68,7 +68,7 @@ class Config:
     ML_ENABLED = True
     ML_MIN_ACCURACY = 0.60      # Only deploy if >= 60% accuracy
     ML_MIN_TRADES_TO_TRAIN = 50 # Need 50 closed trades for training
-    ML_RETRAIN_HOUR = 21        # Retrain at 9 PM ET after market close
+    ML_RETRAIN_HOUR = 22        # Retrain at 10 PM UTC = 6 PM ET (after 4 PM close)
     ML_VALIDATION_SPLIT = 0.2   # 20% validation set
 
     # ===== Logging =====
