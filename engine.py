@@ -53,12 +53,12 @@ class TradingEngine:
             logger.error(f"Trading cycle error: {e}", exc_info=True)
 
     async def _check_drawdown_guard(self):
-        """Check if drawdown exceeds limit."""
+        """Check if drawdown exceeds limit (circuit breaker)."""
         account = await self.broker.get_account()
         drawdown = (account['peak_value'] - account['portfolio_value']) / account['peak_value']
 
-        if drawdown >= Config.DRAWDOWN_PAUSE_PCT:
-            logger.error(f"DRAWDOWN LIMIT HIT: {drawdown*100:.2f}% >= {Config.DRAWDOWN_PAUSE_PCT*100:.2f}%")
+        if drawdown >= Config.MAX_DAILY_LOSS_PCT:
+            logger.error(f"⛔ CIRCUIT BREAKER HIT: {drawdown*100:.2f}% >= {Config.MAX_DAILY_LOSS_PCT*100:.2f}%")
             self.is_paused = True
             self.pause_reason = f"Drawdown {drawdown*100:.2f}% exceeds limit"
 
