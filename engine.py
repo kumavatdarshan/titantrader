@@ -223,6 +223,7 @@ class TradingEngine:
             session.add(new_pos)
             await session.commit()
 
+            cost = qty * order.fill_price
             logger.info(f"{symbol}: BUY order filled. Qty={qty:.4f}, Price=${order.fill_price:.2f}, Cost=${cost:.2f}")
 
         except Exception as e:
