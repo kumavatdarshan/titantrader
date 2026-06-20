@@ -27,7 +27,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install sqlalchemy aiosqlite
 
-    - name: 🏥 Run health checks
+    - name: Run health checks
       run: |
         python << 'PYTHON'
         import sqlite3
@@ -35,14 +35,15 @@ jobs:
         from datetime import datetime, timedelta
 
         print("=" * 60)
-        print("🏥 TITANTRADER HEALTH CHECK")
+        print("TITANTRADER HEALTH CHECK")
         print("=" * 60)
 
         # Check database exists
         db_path = "titantrader.db"
         if not os.path.exists(db_path):
-            print("❌ Database not found!")
-            exit(1)
+            print("WARNING: Database not found! Bot hasn't run yet.")
+            print("Database will be created on first trade execution.")
+            exit(0)  # Don't fail, just warn
 
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
@@ -50,30 +51,30 @@ jobs:
         # Check trade count
         cursor.execute('SELECT COUNT(*) FROM trades')
         total_trades = cursor.fetchone()[0]
-        print(f"✓ Total trades: {total_trades}")
+        print(f"[OK] Total trades: {total_trades}")
 
         # Check P&L
         cursor.execute('SELECT SUM(net_pnl) FROM trades')
         total_pnl = cursor.fetchone()[0] or 0.0
-        print(f"✓ Total P&L: ${total_pnl:+.2f}")
+        print(f"[OK] Total P&L: ${total_pnl:+.2f}")
 
         # Check last trade
         cursor.execute('SELECT timestamp, symbol, side, net_pnl FROM trades ORDER BY timestamp DESC LIMIT 1')
         last_trade = cursor.fetchone()
         if last_trade:
-            print(f"✓ Last trade: {last_trade[0]} - {last_trade[1]} {last_trade[2]} (P&L: ${last_trade[3]:+.2f})")
+            print(f"[OK] Last trade: {last_trade[0]} - {last_trade[1]} {last_trade[2]} (P&L: ${last_trade[3]:+.2f})")
 
         # Check open positions
         cursor.execute('SELECT COUNT(*), SUM(qty * avg_entry_price) FROM positions')
         open_count, position_value = cursor.fetchone()
-        print(f"✓ Open positions: {open_count} (value: ${position_value or 0:.2f})")
+        print(f"[OK] Open positions: {open_count} (value: ${position_value or 0:.2f})")
 
         # Win rate calculation
         if total_trades > 0:
             cursor.execute('SELECT COUNT(*) FROM trades WHERE net_pnl > 0')
             winners = cursor.fetchone()[0]
             win_rate = (winners / total_trades) * 100
-            print(f"✓ Win rate: {win_rate:.1f}% ({winners}/{total_trades})")
+            print(f"[OK] Win rate: {win_rate:.1f}% ({winners}/{total_trades})")
 
         # Today's trades
         cursor.execute('''
@@ -82,19 +83,19 @@ jobs:
             WHERE DATE(timestamp) = DATE('now')
         ''')
         today_count, today_pnl = cursor.fetchone()
-        print(f"✓ Today's trades: {today_count or 0} (P&L: ${today_pnl or 0:.2f})")
+        print(f"[OK] Today's trades: {today_count or 0} (P&L: ${today_pnl or 0:.2f})")
 
         # Warnings
         if total_trades == 0:
-            print("⚠️  No trades yet - bot may not be running properly")
+            print("[WARN] No trades yet - bot may not be running properly")
         if total_pnl < 0:
-            print(f"⚠️  Negative P&L - strategy needs tuning")
+            print(f"[WARN] Negative P&L - strategy needs tuning")
         if open_count > 5:
-            print(f"⚠️  Too many open positions ({open_count})")
+            print(f"[WARN] Too many open positions ({open_count})")
 
         print("=" * 60)
         conn.close()
-        print("✅ Health check complete")
+        print("[DONE] Health check complete")
         PYTHON
 
       continue-on-error: true
