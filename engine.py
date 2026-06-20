@@ -36,9 +36,8 @@ class TradingEngine:
 
             # Skip if outside market hours
             current_hour_utc = datetime.utcnow().hour
-            trading_start, trading_end = Config.get_trading_hours_utc()
-            if not (trading_start <= current_hour_utc < trading_end):
-                logger.warning(f"Outside trading hours ({current_hour_utc}:00 UTC, range {trading_start}-{trading_end}). Skipping cycle.")
+            if not (Config.TRADING_HOURS_START <= current_hour_utc < Config.TRADING_HOURS_END):
+                logger.warning(f"Outside trading hours ({current_hour_utc}:00 UTC). Skipping cycle.")
                 return
 
             await self._check_drawdown_guard()

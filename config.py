@@ -67,12 +67,6 @@ class Config:
     ALPACA_PAPER_URL = "https://paper-api.alpaca.markets"
     ALPACA_LIVE_URL = "https://api.alpaca.markets"
 
-    # ===== Angel One SmartAPI =====
-    ANGEL_API_KEY = os.getenv("ANGEL_API_KEY", "")
-    ANGEL_CLIENT_ID = os.getenv("ANGEL_CLIENT_ID", "")
-    ANGEL_ACCESS_TOKEN = os.getenv("ANGEL_ACCESS_TOKEN", "")
-    ANGEL_TOTP_SECRET = os.getenv("ANGEL_TOTP_SECRET", "")
-
     # ===== ML Model =====
     ML_ENABLED = True
     ML_MIN_ACCURACY = 0.60      # Only deploy if >= 60% accuracy
@@ -86,18 +80,8 @@ class Config:
 
     @classmethod
     def is_live_mode(cls):
-        return cls.TRADING_MODE in ("alpaca_live", "angel_live")
+        return cls.TRADING_MODE == "alpaca_live"
 
     @classmethod
     def is_paper_mode(cls):
-        return cls.TRADING_MODE in ("alpaca_paper", "local_paper", "angel_paper")
-
-    @classmethod
-    def is_angel_mode(cls):
-        return cls.TRADING_MODE.startswith("angel")
-
-    @classmethod
-    def get_trading_hours_utc(cls):
-        if cls.is_angel_mode():
-            return 3, 10   # 9:15 AM - 3:30 PM IST = 3:45 AM - 10:00 AM UTC
-        return 13, 19      # NYSE hours (1:30 PM - 7:30 PM UTC)
+        return cls.TRADING_MODE in ("alpaca_paper", "local_paper")

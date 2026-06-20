@@ -56,27 +56,7 @@ MOCK_PRICES = {
 async def fetch_price(symbol: str, use_mock: bool = True) -> dict:
     """Fetch price from Angel SmartAPI or yfinance with retry logic. Falls back to mock data if unavailable."""
     try:
-        # Try Angel SmartAPI for NSE symbols
-        if Config.is_angel_mode() and not symbol.endswith(".NS"):
-            try:
-                from SmartApi import SmartConnect
-                if hasattr(Config, '_angel_api') and Config._angel_api:
-                    response = Config._angel_api.ltpData("NSE", symbol, Config.ANGEL_ACCESS_TOKEN)
-                    if response and response.get("status") == "success":
-                        data = response.get("data", {})
-                        price = float(data.get("ltp", 0))
-                        if price > 0:
-                            return {
-                                'price': price,
-                                'timestamp': datetime.utcnow(),
-                                'source': 'angel',
-                                'is_stale': False,
-                                'volume': int(data.get("volume", 0))
-                            }
-            except Exception as e:
-                logger.debug(f"Angel API price fetch failed for {symbol}: {e}")
-
-        # Fallback to yfinance
+        # Fallback to yfinance (with .NS suffix for Angel/NSE mode)
         import yfinance as yf
         # For NSE, append .NS if not already present
         yf_symbol = symbol if symbol.endswith(".NS") else (symbol + ".NS" if Config.is_angel_mode() else symbol)
@@ -126,77 +106,7 @@ async def fetch_price(symbol: str, use_mock: bool = True) -> dict:
 
 
 async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
-    """Fetch OHLCV candles from Angel, Alpaca, or yfinance, with mock fallback."""
-
-    # Try Angel SmartAPI first if in Angel mode
-    if Config.TRADING_MODE.startswith("angel"):
-        try:
-            from SmartApi import SmartConnect
-            if hasattr(Config, '_angel_api') and Config._angel_api:
-                from datetime import timedelta
-                if period == "1mo":
-                    start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
-                elif period == "3mo":
-                    start_date = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d")
-                else:
-                    start_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
-
-                end_date = datetime.utcnow().strftime("%Y-%m-%d")
-
-                # Get symbol token
-                tokens = {"RELIANCE": "4742401", "INFY": "1594550", "TCS": "3341761"}
-                token = tokens.get(symbol, "0")
-
-                try:
-                    response = Config._angel_api.getCandleData(
-                        {"mode": "FULL", "exchangetokens": {"NSE": [token]}, "interval": "1day"}
-                    )
-                    if response and response.get("status") == "success":
-                        bars = response.get("data", {}).get("fetched", [])
-                        if bars:
-                            data = []
-                            for bar in bars:
-                                data.append({
-                                    'Date': pd.Timestamp(int(bar[0]) / 1000, unit='s'),
-                                    'Open': float(bar[1]),
-                                    'High': float(bar[2]),
-                                    'Low': float(bar[3]),
-                                    'Close': float(bar[4]),
-                                    'Volume': float(bar[5])
-                                })
-                            if data:
-                                df = pd.DataFrame(data)
-                                df = df.sort_values('Date').reset_index(drop=True)
-                                logger.info(f"✓ Fetched {len(df)} bars for {symbol} from Angel SmartAPI")
-                                return {
-                                    'symbol': symbol,
-                                    'data': df,
-                                    'rows': len(df),
-                                    'source': 'angel',
-                                    'success': True
-                                }
-                except Exception as e:
-                    logger.warning(f"Angel historical data fetch failed for {symbol}: {e}")
-        except Exception as e:
-            logger.debug(f"Angel SmartAPI not available: {e}")
-
-        # Fallback to yfinance for Angel mode (with .NS suffix)
-        try:
-            yf_symbol = symbol + ".NS"
-            df = yf.download(yf_symbol, period=period, progress=False, timeout=5)
-            if not df.empty:
-                df['Date'] = df.index
-                df = df.reset_index(drop=True)
-                logger.info(f"✓ Fetched {len(df)} bars for {yf_symbol} from yfinance")
-                return {
-                    'symbol': symbol,
-                    'data': df,
-                    'rows': len(df),
-                    'source': 'yfinance',
-                    'success': True
-                }
-        except Exception as e:
-            logger.warning(f"yfinance NSE fetch failed for {symbol}: {e}")
+    """Fetch OHLCV candles from Alpaca or yfinance, with mock fallback."""
 
     # Try Alpaca if in Alpaca mode
     if Config.TRADING_MODE.startswith("alpaca"):
@@ -267,7 +177,13 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
 
     # Fallback to yfinance
     try:
-        df = yf.download(symbol, period=period, progress=False, timeout=5)
+        # For Indian NSE stocks, append .NS suffix if not already present
+        yf_symbol = symbol if symbol.endswith(".NS") else symbol
+        # Check if it's an Indian stock symbol by looking in MOCK_PRICES
+        if symbol in MOCK_PRICES and symbol not in ("BTC-USD", "ETH-USD", "SPY", "QQQ"):
+            yf_symbol = symbol + ".NS" if not symbol.endswith(".NS") else symbol
+
+        df = yf.download(yf_symbol, period=period, progress=False, timeout=5)
 
         if df.empty:
             logger.error(f"No OHLCV data for {symbol}")

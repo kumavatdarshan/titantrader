@@ -87,29 +87,28 @@ class PositionSizer:
     @staticmethod
     def check_correlation(positions: dict) -> bool:
         """Prevent holding too many correlated positions."""
-        if Config.is_angel_mode():
-            # Indian market correlation groups
-            banking_symbols = {'HDFCBANK', 'ICICIBANK', 'SBIN', 'KOTAKBANK', 'AXISBANK'}
-            it_symbols = {'INFY', 'TCS', 'WIPRO', 'HCLTECH', 'TECHM'}
+        # Tech sector correlation group
+        tech_symbols = {'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'META'}
+        held_tech = [s for s in positions.keys() if s in tech_symbols]
 
-            held_banking = [s for s in positions.keys() if s in banking_symbols]
-            held_it = [s for s in positions.keys() if s in it_symbols]
+        # Indian banking/IT correlation groups
+        banking_symbols = {'HDFCBANK', 'ICICIBANK', 'SBIN', 'KOTAKBANK', 'AXISBANK'}
+        it_symbols = {'INFY', 'TCS', 'WIPRO', 'HCLTECH', 'TECHM'}
+        held_banking = [s for s in positions.keys() if s in banking_symbols]
+        held_it = [s for s in positions.keys() if s in it_symbols]
 
-            if len(held_banking) > 2:
-                logger.warning(f"Too many correlated banking positions: {held_banking}")
-                return False
+        # Check all correlation groups
+        if len(held_tech) > 2:
+            logger.warning(f"Too many correlated tech positions: {held_tech}")
+            return False
 
-            if len(held_it) > 2:
-                logger.warning(f"Too many correlated IT positions: {held_it}")
-                return False
-        else:
-            # US market tech sector correlation group
-            tech_symbols = {'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'META'}
-            held_tech = [s for s in positions.keys() if s in tech_symbols]
+        if len(held_banking) > 2:
+            logger.warning(f"Too many correlated banking positions: {held_banking}")
+            return False
 
-            if len(held_tech) > 2:
-                logger.warning(f"Too many correlated tech positions: {held_tech}")
-                return False
+        if len(held_it) > 2:
+            logger.warning(f"Too many correlated IT positions: {held_it}")
+            return False
 
         return True
 

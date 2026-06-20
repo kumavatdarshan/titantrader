@@ -12,7 +12,6 @@ from config import Config
 from db import init_db, get_session_factory, Strategy as StrategyModel
 from broker.paper_broker import PaperBroker
 from broker.alpaca_broker import AlpacaBroker
-from broker.angel_broker import AngelBroker
 from engine import TradingEngine
 from backtester import Backtester
 from learner import Learner
@@ -65,9 +64,6 @@ class TitanTrader:
         elif Config.TRADING_MODE.startswith("alpaca"):
             self.broker = AlpacaBroker(self.session_factory, Config.STARTING_CAPITAL)
             logger.info(f"Using Alpaca broker ({Config.TRADING_MODE})")
-        elif Config.TRADING_MODE.startswith("angel"):
-            self.broker = AngelBroker(self.session_factory, Config.STARTING_CAPITAL)
-            logger.info(f"Using Angel One broker ({Config.TRADING_MODE}) — NSE Indian Market")
 
         self.engine = TradingEngine(self.broker, self.session_factory)
         self.backtester = Backtester(self.session_factory)

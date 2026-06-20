@@ -15,6 +15,7 @@ async def main():
     try:
         from config import Config
         from db import init_db, get_session_factory
+        from broker.paper_broker import PaperBroker
         from broker.alpaca_broker import AlpacaBroker
         from engine import TradingEngine
         from learner import Learner
@@ -28,7 +29,12 @@ async def main():
         db_engine = await init_db()
         session_factory = get_session_factory(db_engine)
 
-        broker = AlpacaBroker(session_factory, Config.STARTING_CAPITAL)
+        if Config.TRADING_MODE == "local_paper":
+            broker = PaperBroker(session_factory, Config.STARTING_CAPITAL)
+            logger.info("Using local paper broker (yfinance + SQLite)")
+        else:
+            broker = AlpacaBroker(session_factory, Config.STARTING_CAPITAL)
+            logger.info(f"Using Alpaca broker ({Config.TRADING_MODE})")
         engine = TradingEngine(broker, session_factory)
         learner = Learner(session_factory)
 
