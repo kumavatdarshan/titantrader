@@ -2,9 +2,10 @@ name: TitanTrader - Live Trading
 
 on:
   schedule:
-    # Run every 30 minutes during US market hours (9:30 AM - 3:30 PM ET)
-    # 9:30 AM ET = 1:30 PM UTC, 3:30 PM ET = 7:30 PM UTC
-    - cron: '0,30 13-19 * * 1-5'  # Monday-Friday only
+    # Run every 15 minutes during market hours (configurable for US or India)
+    # US: 9:30 AM - 3:30 PM ET = 1:30 PM - 7:30 PM UTC (cron: 0,30 13-19)
+    # India: 9:15 AM - 3:30 PM IST = 3:45 AM - 10:00 AM UTC (cron: */15 3-10)
+    - cron: '*/15 3-10 * * 1-5'  # Monday-Friday, for Indian NSE market
   workflow_dispatch:
 
 jobs:
@@ -36,10 +37,16 @@ jobs:
       run: |
         cat > .env << 'EOF'
         TRADING_MODE=${{ secrets.TRADING_MODE }}
-        ALPACA_API_KEY=${{ secrets.ALPACA_API_KEY }}
-        ALPACA_SECRET_KEY=${{ secrets.ALPACA_SECRET_KEY }}
         STARTING_CAPITAL=${{ secrets.STARTING_CAPITAL }}
         SYMBOLS=${{ secrets.SYMBOLS }}
+        DASHBOARD_PORT=8000
+        TRADE_INTERVAL_MINUTES=15
+        ALPACA_API_KEY=${{ secrets.ALPACA_API_KEY }}
+        ALPACA_SECRET_KEY=${{ secrets.ALPACA_SECRET_KEY }}
+        ANGEL_API_KEY=${{ secrets.ANGEL_API_KEY }}
+        ANGEL_CLIENT_ID=${{ secrets.ANGEL_CLIENT_ID }}
+        ANGEL_ACCESS_TOKEN=${{ secrets.ANGEL_ACCESS_TOKEN }}
+        ANGEL_TOTP_SECRET=${{ secrets.ANGEL_TOTP_SECRET }}
         EOF
 
     - name: Execute trading cycle

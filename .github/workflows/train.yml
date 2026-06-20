@@ -2,9 +2,10 @@ name: TitanTrader - ML Training
 
 on:
   schedule:
-    # Run every night at 10 PM UTC (6 PM ET) after market close (4 PM ET)
-    # 10 PM UTC = 6 PM ET = 2 hours after market close for safety margin
-    - cron: '0 22 * * 1-5'  # Monday-Friday only
+    # Run after market close
+    # US: 10 PM UTC (6 PM ET) after market close at 4 PM ET
+    # India: 11 AM UTC (4:30 PM IST) after market close at 3:30 PM IST
+    - cron: '0 11 * * 1-5'  # Monday-Friday, for Indian NSE market (after 4:30 PM IST)
   workflow_dispatch:
 
 jobs:
@@ -31,6 +32,21 @@ jobs:
 
     - name: Setup directories
       run: mkdir -p models logs
+
+    - name: Configure secrets
+      run: |
+        cat > .env << 'EOF'
+        TRADING_MODE=${{ secrets.TRADING_MODE }}
+        STARTING_CAPITAL=${{ secrets.STARTING_CAPITAL }}
+        SYMBOLS=${{ secrets.SYMBOLS }}
+        DASHBOARD_PORT=8000
+        ALPACA_API_KEY=${{ secrets.ALPACA_API_KEY }}
+        ALPACA_SECRET_KEY=${{ secrets.ALPACA_SECRET_KEY }}
+        ANGEL_API_KEY=${{ secrets.ANGEL_API_KEY }}
+        ANGEL_CLIENT_ID=${{ secrets.ANGEL_CLIENT_ID }}
+        ANGEL_ACCESS_TOKEN=${{ secrets.ANGEL_ACCESS_TOKEN }}
+        ANGEL_TOTP_SECRET=${{ secrets.ANGEL_TOTP_SECRET }}
+        EOF
 
     - name: Train ML Model
       run: |
