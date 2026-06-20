@@ -54,12 +54,13 @@ MOCK_PRICES = {
 
 @retry_on_timeout(max_retries=2, delay=0.5)
 async def fetch_price(symbol: str, use_mock: bool = True) -> dict:
-    """Fetch price from Angel SmartAPI or yfinance with retry logic. Falls back to mock data if unavailable."""
+    """Fetch price from yfinance with retry logic. Falls back to mock data if unavailable."""
     try:
-        # Fallback to yfinance (with .NS suffix for Angel/NSE mode)
+        # Fallback to yfinance (with .NS suffix for Indian NSE stocks)
         import yfinance as yf
         # For NSE, append .NS if not already present
-        yf_symbol = symbol if symbol.endswith(".NS") else (symbol + ".NS" if Config.is_angel_mode() else symbol)
+        indian_symbols = {'RELIANCE', 'INFY', 'TCS', 'HDFCBANK', 'ICICIBANK', 'WIPRO', 'SBIN', 'KOTAKBANK', 'AXISBANK', 'NIFTY50'}
+        yf_symbol = symbol if symbol.endswith(".NS") else (symbol + ".NS" if symbol in indian_symbols else symbol)
 
         # Add user-agent to prevent blocking
         ticker = yf.Ticker(yf_symbol, session=None)
@@ -106,7 +107,7 @@ async def fetch_price(symbol: str, use_mock: bool = True) -> dict:
 
 
 async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
-    """Fetch OHLCV candles from Alpaca or yfinance, with mock fallback."""
+    """Fetch OHLCV candles from Alpaca or yfinance (with .NS suffix for NSE), with mock fallback."""
 
     # Try Alpaca if in Alpaca mode
     if Config.TRADING_MODE.startswith("alpaca"):
