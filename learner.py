@@ -5,7 +5,6 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 from sqlalchemy import select
-import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -35,9 +34,10 @@ class Learner:
                 return
 
             profitable_trades = sum(1 for t in trades if (t.net_pnl or 0) > 0)
+            losing_trades = len(trades) - profitable_trades
             win_rate = profitable_trades / len(trades) if trades else 0
             avg_win = sum(t.net_pnl for t in trades if (t.net_pnl or 0) > 0) / profitable_trades if profitable_trades > 0 else 0
-            avg_loss = abs(sum(t.net_pnl for t in trades if (t.net_pnl or 0) <= 0) / (len(trades) - profitable_trades)) if (len(trades) - profitable_trades) > 0 else 0
+            avg_loss = sum(abs(t.net_pnl) for t in trades if (t.net_pnl or 0) < 0) / losing_trades if losing_trades > 0 else 0
 
             logger.info(f"Training on {len(trades)} trades | Win rate: {win_rate*100:.1f}% | Avg win: ${avg_win:.2f} | Avg loss: ${avg_loss:.2f}")
 
@@ -153,6 +153,13 @@ class Learner:
 
             df = pd.DataFrame(features_list)
             df = df.fillna(df.median())
+
+            if df.isnull().any().any():
+                logger.warning("NaN values remain after fillna, dropping affected rows")
+                df = df.dropna()
+                if len(df) < 10:
+                    logger.error("Not enough valid data after NaN removal")
+                    return None, None
 
             X = df[['rsi', 'macd', 'macd_signal', 'bb_position', 'atr', 'momentum', 'volatility', 'volume_ratio', 'hour_of_day', 'day_of_week']].values
             y = np.array(targets)

@@ -28,9 +28,10 @@ class RSIReversionStrategy(Strategy):
         current_lower = lower_bb.iloc[-1]
         current_upper = upper_bb.iloc[-1]
 
-        hour = pd.Timestamp.now().hour
-        if 9 <= hour < 10:
-            return Signal(direction="HOLD", confidence=0.0, reasoning="Skip market open volatility")
+        from datetime import datetime
+        hour = datetime.utcnow().hour
+        if 13 <= hour < 14:
+            return Signal(direction="HOLD", confidence=0.0, reasoning="Skip market open volatility (9:30-10:30 ET)")
 
         momentum = (close.iloc[-1] - close.iloc[-5]) / close.iloc[-5]
         strength = abs(current_rsi - 50) / 50

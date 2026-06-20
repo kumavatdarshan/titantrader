@@ -87,7 +87,8 @@ class MLPredictorStrategy(Strategy):
 
             bb_position = (closes[-1] - bb_lower[-1]) / (bb_upper[-1] - bb_lower[-1]) if (bb_upper[-1] - bb_lower[-1]) != 0 else 0.5
 
-            now = pd.Timestamp.now()
+            from datetime import datetime
+            now = pd.Timestamp(datetime.utcnow())
             hour = now.hour
             day = now.dayofweek
 

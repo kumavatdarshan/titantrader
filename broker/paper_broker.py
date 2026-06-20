@@ -211,7 +211,7 @@ class PaperBroker(Broker):
         session.add(trade)
         self.cash += (trade_value - fee_cost)
 
-        await session.delete(pos)
+        session.delete(pos)
         await session.flush()
         await session.commit()
 

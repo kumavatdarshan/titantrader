@@ -201,6 +201,7 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
             current_price = base_price
             for date in dates:
                 daily_change = random.uniform(-0.02, 0.02)
+                open_price = current_price * (1 - random.uniform(0, 0.005))
                 high = current_price * (1 + abs(daily_change) + random.uniform(0, 0.01))
                 low = current_price * (1 - abs(daily_change) - random.uniform(0, 0.01))
                 close = current_price * (1 + daily_change)
@@ -208,7 +209,7 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
 
                 data.append({
                     'Date': date,
-                    'Open': current_price * (1 - random.uniform(0, 0.005)),
+                    'Open': open_price,
                     'High': high,
                     'Low': low,
                     'Close': close,

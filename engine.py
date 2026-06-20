@@ -61,6 +61,9 @@ class TradingEngine:
     async def _check_drawdown_guard(self):
         """Check if drawdown exceeds limit (circuit breaker)."""
         account = await self.broker.get_account()
+        if account['peak_value'] <= 0:
+            logger.warning("Peak value is invalid, skipping drawdown check")
+            return
         drawdown = (account['peak_value'] - account['portfolio_value']) / account['peak_value']
 
         if drawdown >= Config.MAX_DAILY_LOSS_PCT:
@@ -282,7 +285,10 @@ class TradingEngine:
         """Save current portfolio state."""
         try:
             account = await self.broker.get_account()
-            drawdown = (account['peak_value'] - account['portfolio_value']) / account['peak_value']
+            if account['peak_value'] <= 0:
+                drawdown = 0.0
+            else:
+                drawdown = (account['peak_value'] - account['portfolio_value']) / account['peak_value']
 
             snapshot = EquitySnapshot(
                 total_value=account['portfolio_value'],

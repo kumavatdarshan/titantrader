@@ -172,8 +172,8 @@ class AlpacaBroker(Broker):
                     logger.error(f"Order {alpaca_order.id} not filled after 60s")
                     try:
                         self.api.cancel_order(alpaca_order.id)
-                    except:
-                        pass
+                    except (Exception,) as e:
+                        logger.debug(f"Failed to cancel order: {e}")
                     raise TimeoutError(f"Order timeout: {symbol}")
 
             # For BUY orders: place stop-loss and take-profit bracket orders
