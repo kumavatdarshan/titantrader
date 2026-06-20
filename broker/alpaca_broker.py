@@ -29,7 +29,7 @@ class AlpacaBroker(Broker):
 
         # Validate credentials before initializing API client
         if not Config.ALPACA_API_KEY or not Config.ALPACA_SECRET_KEY:
-            logger.error("❌ ALPACA_API_KEY or ALPACA_SECRET_KEY not configured")
+            logger.error(" ALPACA_API_KEY or ALPACA_SECRET_KEY not configured")
             raise ValueError("Alpaca credentials (API key and secret) are required. Set them in GitHub Secrets or .env file")
 
         # Initialize Alpaca API client
@@ -42,10 +42,11 @@ class AlpacaBroker(Broker):
 
         if Config.TRADING_MODE == "alpaca_live":
             logger.error("=" * 70)
-            logger.error("⚠️  LIVE TRADING — REAL MONEY AT RISK")
+            logger.error("LIVE TRADING - REAL MONEY AT RISK")
             logger.error(f"Capital: ${starting_capital:,.2f}")
-            logger.error(f"Max position: {Config.MAX_POSITION_PCT*100:.1f}%")
+            logger.error(f"Risk per trade: {Config.RISK_PER_TRADE_PCT*100:.1f}%")
             logger.error(f"Stop-loss: {Config.STOP_LOSS_PCT*100:.1f}%")
+            logger.error(f"Max positions: {Config.MAX_OPEN_POSITIONS}")
             logger.error("=" * 70)
         else:
             logger.info("[PAPER] ALPACA PAPER TRADING - Real fills, real prices, fake money")
@@ -53,11 +54,11 @@ class AlpacaBroker(Broker):
         # Verify connection and get initial account info
         try:
             account = self.api.get_account()
-            logger.info(f"✓ Connected to Alpaca | Account: {account.account_number}")
+            logger.info(f" Connected to Alpaca | Account: {account.account_number}")
             logger.info(f"  Starting equity: ${float(account.equity):,.2f}")
             logger.info(f"  Buying power: ${float(account.buying_power):,.2f}")
         except APIError as e:
-            logger.error(f"❌ Failed to connect to Alpaca: {e}")
+            logger.error(f" Failed to connect to Alpaca: {e}")
             raise
 
     async def get_price(self, symbol: str) -> dict:
@@ -151,7 +152,7 @@ class AlpacaBroker(Broker):
                 if filled_qty > 0:
                     filled = True
                     fill_price = float(status.filled_avg_price)
-                    logger.info(f"✓ Order filled: {side} {filled_qty:.4f} {symbol} @ ${fill_price:.4f}")
+                    logger.info(f" Order filled: {side} {filled_qty:.4f} {symbol} @ ${fill_price:.4f}")
                     break
 
                 if status.status == 'cancelled':
@@ -165,7 +166,7 @@ class AlpacaBroker(Broker):
 
                 if final_qty > 0:
                     fill_price = float(final_status.filled_avg_price)
-                    logger.info(f"✓ Order eventually filled: {final_qty:.4f} {symbol} @ ${fill_price:.4f}")
+                    logger.info(f" Order eventually filled: {final_qty:.4f} {symbol} @ ${fill_price:.4f}")
                     filled = True
                 else:
                     logger.error(f"Order {alpaca_order.id} not filled after 60s")
@@ -180,7 +181,7 @@ class AlpacaBroker(Broker):
                 stop_price = fill_price * (1 - stop_loss_pct)
                 profit_price = fill_price * (1 + take_profit_pct)
 
-                logger.info(f"📊 Placing bracket orders for {symbol}:")
+                logger.info(f" Placing bracket orders for {symbol}:")
                 logger.info(f"   Entry: ${fill_price:.2f} | Stop: ${stop_price:.2f} | Target: ${profit_price:.2f}")
 
                 try:
@@ -193,7 +194,7 @@ class AlpacaBroker(Broker):
                         stop_price=stop_price,
                         time_in_force='gtc'  # Good til cancelled
                     )
-                    logger.info(f"✓ Stop-loss placed @ ${stop_price:.2f}")
+                    logger.info(f" Stop-loss placed @ ${stop_price:.2f}")
                 except Exception as e:
                     logger.error(f"Failed to place stop-loss: {e}")
 
@@ -207,7 +208,7 @@ class AlpacaBroker(Broker):
                         limit_price=profit_price,
                         time_in_force='gtc'  # Good til cancelled
                     )
-                    logger.info(f"✓ Take-profit placed @ ${profit_price:.2f}")
+                    logger.info(f" Take-profit placed @ ${profit_price:.2f}")
                 except Exception as e:
                     logger.error(f"Failed to place take-profit: {e}")
 
@@ -293,7 +294,7 @@ class AlpacaBroker(Broker):
                 for db_pos in db_positions:
                     if db_pos.symbol not in alpaca_symbols:
                         # Position was closed (by stop-loss or take-profit)
-                        logger.info(f"✓ Position closed: {db_pos.symbol}")
+                        logger.info(f" Position closed: {db_pos.symbol}")
 
                         # Calculate P&L
                         current_price = current_prices.get(db_pos.symbol, db_pos.avg_entry_price)

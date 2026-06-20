@@ -24,7 +24,7 @@ class Learner:
 
     async def retrain_ml_model(self):
         """Nightly ML retraining pipeline."""
-        logger.info("🤖 Starting ML model retraining...")
+        logger.info(" Starting ML model retraining...")
 
         async with self.session_factory() as session:
             result = await session.execute(select(Trade))
@@ -80,9 +80,9 @@ class Learner:
             await session.commit()
 
             if accuracy >= Config.ML_MIN_ACCURACY:
-                logger.info(f"✅ Model deployed to {model_path} (accuracy: {accuracy*100:.2f}%, F1: {f1:.4f})")
+                logger.info(f" Model deployed to {model_path} (accuracy: {accuracy*100:.2f}%, F1: {f1:.4f})")
             else:
-                logger.warning(f"⚠️ Model saved but not deployed (accuracy {accuracy*100:.2f}% < {Config.ML_MIN_ACCURACY*100:.0f}% threshold)")
+                logger.warning(f" Model saved but not deployed (accuracy {accuracy*100:.2f}% < {Config.ML_MIN_ACCURACY*100:.0f}% threshold)")
 
     async def _prepare_features(self, trades):
         """Extract real market technical features from price history at trade times."""
