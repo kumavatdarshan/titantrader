@@ -23,14 +23,20 @@ jobs:
 
     - name: Install dependencies
       run: |
+        echo "📦 Installing dependencies..."
         python -m pip install --upgrade pip setuptools wheel
         pip install -r requirements.txt
+        echo "✓ Dependencies installed"
 
     - name: Create directories
-      run: mkdir -p logs models
+      run: |
+        echo "📁 Creating directories..."
+        mkdir -p logs models
+        echo "✓ Directories created"
 
     - name: Create .env file
       run: |
+        echo "🔐 Creating .env file..."
         cat > .env << 'EOF'
         TRADING_MODE=${{ secrets.TRADING_MODE }}
         ALPACA_API_KEY=${{ secrets.ALPACA_API_KEY }}
@@ -42,12 +48,34 @@ jobs:
         TRADE_INTERVAL_MINUTES=30
         LOG_LEVEL=INFO
         EOF
+        echo "✓ .env file created"
+        echo "Environment check:"
+        wc -l .env
+        head -3 .env
 
     - name: Run trading cycle
       timeout-minutes: 3
       run: |
-        timeout 90s python run_cycle.py 2>&1 | tee logs/run.log || echo "⚠️ Trading cycle completed with status: $?"
+        echo "🚀 Starting trading cycle at $(date -u)"
+        python run_cycle.py 2>&1 | tee logs/run.log
+        echo "✓ Trading cycle completed at $(date -u)"
+        echo "Exit status: $?"
       continue-on-error: true
+
+    - name: Debug - Check workflow results
+      if: always()
+      run: |
+        echo "📊 Workflow Results:"
+        echo "Database file:"
+        ls -lh titantrader.db 2>/dev/null || echo "❌ No database file"
+        echo "Logs:"
+        ls -lh logs/ 2>/dev/null || echo "❌ No logs"
+        echo "Models:"
+        ls -lh models/ 2>/dev/null || echo "❌ No models"
+        if [ -f logs/run.log ]; then
+          echo "=== Last 20 lines of run.log ==="
+          tail -20 logs/run.log
+        fi
 
     - name: Commit and push results
       run: |
