@@ -1,11 +1,31 @@
 import logging
 from datetime import datetime, timedelta
 import random
+import asyncio
 import yfinance as yf
 import pandas as pd
 from config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def retry_on_timeout(max_retries=3, delay=1.0):
+    """Decorator to retry async functions on timeout/connection errors."""
+    def decorator(func):
+        async def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return await func(*args, **kwargs)
+                except (TimeoutError, ConnectionError, Exception) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = delay * (2 ** attempt)  # Exponential backoff
+                        logger.warning(f"Attempt {attempt + 1}/{max_retries} failed for {func.__name__}: {e}. Retrying in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        logger.error(f"All {max_retries} retries failed for {func.__name__}")
+                        raise
+        return wrapper
+    return decorator
 
 MOCK_PRICES = {
     "BTC-USD": 67000,
@@ -21,13 +41,14 @@ MOCK_PRICES = {
 }
 
 
+@retry_on_timeout(max_retries=2, delay=0.5)
 async def fetch_price(symbol: str, use_mock: bool = True) -> dict:
-    """Fetch price from yfinance. Never invent data - raises exception if data unavailable."""
+    """Fetch price from yfinance with retry logic. Falls back to mock data if unavailable."""
     try:
         import yfinance as yf
         # Add user-agent to prevent blocking
         ticker = yf.Ticker(symbol, session=None)
-        data = yf.download(symbol, period="5d", progress=False, timeout=10)
+        data = yf.download(symbol, period="5d", progress=False, timeout=5)
 
         if data.empty:
             raise Exception(f"No data for {symbol}")
@@ -141,7 +162,7 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
 
     # Fallback to yfinance
     try:
-        df = yf.download(symbol, period=period, progress=False, timeout=10)
+        df = yf.download(symbol, period=period, progress=False, timeout=5)
 
         if df.empty:
             logger.error(f"No OHLCV data for {symbol}")

@@ -44,8 +44,9 @@ jobs:
         EOF
 
     - name: Run trading cycle
+      timeout-minutes: 3
       run: |
-        python run_cycle.py 2>&1 | tee logs/run.log
+        timeout 90s python run_cycle.py 2>&1 | tee logs/run.log || echo "⚠️ Trading cycle completed with status: $?"
       continue-on-error: true
 
     - name: Commit and push results
