@@ -2,8 +2,9 @@ name: TitanTrader - ML Training
 
 on:
   schedule:
-    # Run every night at 9 PM UTC (4 PM ET) after market close
-    - cron: '0 21 * * 1-5'  # Monday-Friday only
+    # Run every night at 10 PM UTC (6 PM ET) after market close (4 PM ET)
+    # 10 PM UTC = 6 PM ET = 2 hours after market close for safety margin
+    - cron: '0 22 * * 1-5'  # Monday-Friday only
   workflow_dispatch:
 
 jobs:
@@ -14,24 +15,24 @@ jobs:
       contents: write
 
     steps:
-    - name: 📥 Checkout
+    - name: Checkout code
       uses: actions/checkout@v5
 
-    - name: 🐍 Setup Python 3.11
+    - name: Setup Python 3.11
       uses: actions/setup-python@v6
       with:
         python-version: '3.11'
         cache: 'pip'
 
-    - name: 📦 Install dependencies
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install -r requirements.txt
 
-    - name: 📁 Setup directories
+    - name: Setup directories
       run: mkdir -p models logs
 
-    - name: 🤖 Train ML Model
+    - name: Train ML Model
       run: |
         python -c "
         import asyncio
@@ -43,26 +44,31 @@ jobs:
         logger = logging.getLogger(__name__)
 
         async def train():
-            logger.info('🤖 Starting ML model retraining...')
+            logger.info('[START] ML model retraining...')
             try:
                 db_engine = await init_db()
                 session_factory = get_session_factory(db_engine)
                 learner = Learner(session_factory)
                 await learner.retrain_ml_model()
-                logger.info('✅ ML training completed successfully')
+                logger.info('[OK] ML training completed successfully')
             except Exception as e:
-                logger.error(f'❌ Training failed: {e}', exc_info=True)
+                logger.error(f'[ERROR] Training failed: {e}', exc_info=True)
                 raise
 
         asyncio.run(train())
         " 2>&1 | tee logs/train_$(date +%Y%m%d_%H%M%S).log
       continue-on-error: true
 
-    - name: 📊 Generate Daily Report
+    - name: Generate Daily Report
       run: |
         python -c "
         import sqlite3
+        import os
         from datetime import datetime, timedelta
+
+        if not os.path.exists('titantrader.db'):
+            print('[REPORT] No trades yet - database not created')
+            exit(0)
 
         conn = sqlite3.connect('titantrader.db')
         cursor = conn.cursor()
@@ -74,21 +80,23 @@ jobs:
             FROM trades
             WHERE DATE(timestamp) = ?
         ''', (str(today),))
-        trade_count, daily_pnl = cursor.fetchone()
+        result = cursor.fetchone()
+        trade_count, daily_pnl = (result[0] or 0, result[1] or 0.0) if result else (0, 0.0)
 
         # All-time stats
         cursor.execute('SELECT COUNT(*), SUM(net_pnl) FROM trades')
-        total_trades, total_pnl = cursor.fetchone()
+        result = cursor.fetchone()
+        total_trades, total_pnl = (result[0] or 0, result[1] or 0.0) if result else (0, 0.0)
 
-        print('📊 DAILY REPORT')
-        print(f'Today: {trade_count} trades, P&L: \${daily_pnl or 0:.2f}')
-        print(f'All-time: {total_trades} trades, P&L: \${total_pnl or 0:.2f}')
+        print('[REPORT] Daily Statistics')
+        print(f'Today: {trade_count} trades, P+L: \${daily_pnl:+.2f}')
+        print(f'All-time: {total_trades} trades, P+L: \${total_pnl:+.2f}')
 
         conn.close()
         " 2>&1 | tee -a logs/daily_report.log
       continue-on-error: true
 
-    - name: 💾 Commit results
+    - name: Commit results to GitHub
       run: |
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git config --global user.name "github-actions[bot]"

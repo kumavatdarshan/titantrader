@@ -2,8 +2,8 @@ name: TitanTrader - Live Trading
 
 on:
   schedule:
-    # Run every 30 minutes during US market hours (9:30 AM - 3:00 PM ET)
-    # 9:30 AM ET = 1:30 PM UTC, 3:00 PM ET = 7:00 PM UTC
+    # Run every 30 minutes during US market hours (9:30 AM - 3:30 PM ET)
+    # 9:30 AM ET = 1:30 PM UTC, 3:30 PM ET = 7:30 PM UTC
     - cron: '0,30 13-19 * * 1-5'  # Monday-Friday only
   workflow_dispatch:
 
@@ -15,24 +15,24 @@ jobs:
       contents: write
 
     steps:
-    - name: 📥 Checkout
+    - name: Checkout code
       uses: actions/checkout@v5
 
-    - name: 🐍 Setup Python 3.11
+    - name: Setup Python 3.11
       uses: actions/setup-python@v6
       with:
         python-version: '3.11'
         cache: 'pip'
 
-    - name: 📦 Install dependencies
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install -r requirements.txt
 
-    - name: 📁 Setup directories
+    - name: Setup directories
       run: mkdir -p logs models
 
-    - name: 🔐 Configure secrets
+    - name: Configure secrets
       run: |
         cat > .env << 'EOF'
         TRADING_MODE=${{ secrets.TRADING_MODE }}
@@ -42,13 +42,13 @@ jobs:
         SYMBOLS=${{ secrets.SYMBOLS }}
         EOF
 
-    - name: 🚀 Execute trading cycle
+    - name: Execute trading cycle
       timeout-minutes: 4
       run: |
         python run_cycle.py 2>&1 | tee logs/trade_$(date +%Y%m%d_%H%M%S).log
       continue-on-error: true
 
-    - name: 💾 Sync results
+    - name: Sync results to GitHub
       run: |
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git config --global user.name "github-actions[bot]"
