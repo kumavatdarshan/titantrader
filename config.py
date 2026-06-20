@@ -6,46 +6,79 @@ load_dotenv()
 
 
 class Config:
-    TRADING_MODE = os.getenv("TRADING_MODE", "local_paper")
-    STARTING_CAPITAL = float(os.getenv("STARTING_CAPITAL", 10000))
-    SYMBOLS = os.getenv("SYMBOLS", "AAPL,MSFT,NVDA,GOOGL,TSLA,SPY,JPM,XOM,QQQ").split(",")
-    TRADE_INTERVAL_MINUTES = int(os.getenv("TRADE_INTERVAL_MINUTES", 5))
+    # ===== Trading Mode & Account =====
+    TRADING_MODE = os.getenv("TRADING_MODE", "alpaca_paper")
+    STARTING_CAPITAL = float(os.getenv("STARTING_CAPITAL", 100000))
 
-    MARKET_OPEN_UTC = os.getenv("MARKET_OPEN_UTC", "13:30")
-    MARKET_CLOSE_UTC = os.getenv("MARKET_CLOSE_UTC", "20:00")
+    # ===== Universe: Liquid, Low-Correlation Stocks =====
+    SYMBOLS = os.getenv("SYMBOLS", "AAPL,MSFT,GOOGL,AMZN,NVDA,TSLA,META,SPY,QQQ,IWM").split(",")
 
-    MAX_POSITION_PCT = float(os.getenv("MAX_POSITION_PCT", 0.10))
-    STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", 0.03))
-    TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", 0.06))
-    MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", 9))
-    DRAWDOWN_PAUSE_PCT = float(os.getenv("DRAWDOWN_PAUSE_PCT", 0.12))
+    # ===== Market Hours (UTC) =====
+    MARKET_OPEN_UTC = "13:30"  # 9:30 AM ET
+    MARKET_CLOSE_UTC = "20:00"  # 4:00 PM ET
+    MARKET_OPEN_HOUR_UTC = 13
+    MARKET_CLOSE_HOUR_UTC = 20
 
-    KELLY_FRACTION_CAP = float(os.getenv("KELLY_FRACTION_CAP", 0.25))
-    MIN_KELLY_TRADES = int(os.getenv("MIN_KELLY_TRADES", 10))
+    # ===== High Probability Trading Windows =====
+    TRADING_HOURS_START = 13  # 9:30 AM ET (market open)
+    TRADING_HOURS_END = 19    # 3:00 PM ET (1hr before close)
+    FIRST_HOUR_ONLY = False   # Option to only trade first hour for high volatility
 
-    FEE_RATE = float(os.getenv("FEE_RATE", 0.001))
-    SLIPPAGE_BPS = int(os.getenv("SLIPPAGE_BPS", 5))
+    # ===== Risk Management (CRITICAL) =====
+    RISK_PER_TRADE_PCT = 0.02  # Max 2% risk per trade (PROFESSIONAL STANDARD)
+    MAX_OPEN_POSITIONS = 5     # Max 5 concurrent positions
+    MAX_DAILY_LOSS_PCT = 0.10  # Stop trading if down 10% in a day (circuit breaker)
 
+    # ===== ATR-Based Dynamic Stops =====
+    USE_ATR_STOPS = True       # Use ATR for stops instead of fixed %
+    ATR_PERIOD = 14
+    ATR_STOP_MULTIPLIER = 2.0  # 2x ATR for stop-loss
+    ATR_TARGET_MULTIPLIER = 3.0  # 3x ATR for take-profit
+
+    # ===== Fallback Fixed Stops (if ATR unavailable) =====
+    STOP_LOSS_PCT = 0.03       # 3% stop-loss
+    TAKE_PROFIT_PCT = 0.06     # 6% take-profit
+
+    # ===== Position Sizing =====
+    KELLY_FRACTION_CAP = 0.25   # Use 25% Kelly (conservative)
+    MIN_KELLY_TRADES = 30       # Need 30 trades for Kelly to be reliable
+    BASE_KELLY_WIN_RATE = 0.55  # Assume 55% win rate (professional traders are 52-60%)
+    BASE_KELLY_WIN_SIZE = 1.5   # Avg winner is 1.5x risk
+    BASE_KELLY_LOSS_SIZE = 1.0  # Avg loser is 1x risk
+
+    # ===== Market Regime Detection =====
+    VOLATILITY_FILTER_ENABLED = True
+    VIX_HIGH_THRESHOLD = 25     # Don't trade if VIX > 25 (market stress)
+
+    # ===== Correlation Filter =====
+    MAX_CORRELATION = 0.70      # Don't hold stocks with correlation > 0.7
+    CORRELATION_LOOKBACK_DAYS = 30
+
+    # ===== Costs =====
+    FEE_RATE = 0.0              # Alpaca paper: no fees
+    SLIPPAGE_BPS = 2            # Assume 2 bps slippage in execution
+
+    # ===== Alpaca =====
     ALPACA_API_KEY = os.getenv("ALPACA_API_KEY", "")
     ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "")
-    ALPACA_PAPER_URL = os.getenv("ALPACA_PAPER_URL", "https://paper-api.alpaca.markets")
-    ALPACA_LIVE_URL = os.getenv("ALPACA_LIVE_URL", "https://api.alpaca.markets")
+    ALPACA_PAPER_URL = "https://paper-api.alpaca.markets"
+    ALPACA_LIVE_URL = "https://api.alpaca.markets"
 
-    DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", 8000))
-    DASHBOARD_REFRESH_SECONDS = int(os.getenv("DASHBOARD_REFRESH_SECONDS", 30))
+    # ===== ML Model =====
+    ML_ENABLED = True
+    ML_MIN_ACCURACY = 0.60      # Only deploy if >= 60% accuracy
+    ML_MIN_TRADES_TO_TRAIN = 50 # Need 50 closed trades for training
+    ML_RETRAIN_HOUR = 21        # Retrain at 9 PM ET after market close
+    ML_VALIDATION_SPLIT = 0.2   # 20% validation set
 
-    ML_MIN_ACCURACY = float(os.getenv("ML_MIN_ACCURACY", 0.60))
-    ML_MIN_TRADES_TO_TRAIN = int(os.getenv("ML_MIN_TRADES_TO_TRAIN", 30))
-    ML_RETRAIN_HOUR = int(os.getenv("ML_RETRAIN_HOUR", 20))
-
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
-
+    # ===== Logging =====
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
     DB_PATH = "titantrader.db"
 
     @classmethod
     def is_live_mode(cls):
-        return cls.TRADING_MODE in ("alpaca_live",)
+        return cls.TRADING_MODE == "alpaca_live"
 
     @classmethod
     def is_paper_mode(cls):
-        return cls.TRADING_MODE in ("local_paper", "alpaca_paper")
+        return cls.TRADING_MODE in ("alpaca_paper", "local_paper")

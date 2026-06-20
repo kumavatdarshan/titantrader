@@ -1,0 +1,98 @@
+name: TitanTrader - ML Training
+
+on:
+  schedule:
+    # Run every night at 9 PM UTC (4 PM ET) after market close
+    - cron: '0 21 * * 1-5'  # Monday-Friday only
+  workflow_dispatch:
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+    - name: 📥 Checkout
+      uses: actions/checkout@v5
+
+    - name: 🐍 Setup Python 3.11
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install -r requirements.txt
+
+    - name: 📁 Setup directories
+      run: mkdir -p models logs
+
+    - name: 🤖 Train ML Model
+      run: |
+        python -c "
+        import asyncio
+        import logging
+        from learner import Learner
+        from db import init_db, get_session_factory
+
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+
+        async def train():
+            logger.info('🤖 Starting ML model retraining...')
+            try:
+                db_engine = await init_db()
+                session_factory = get_session_factory(db_engine)
+                learner = Learner(session_factory)
+                await learner.retrain_ml_model()
+                logger.info('✅ ML training completed successfully')
+            except Exception as e:
+                logger.error(f'❌ Training failed: {e}', exc_info=True)
+                raise
+
+        asyncio.run(train())
+        " 2>&1 | tee logs/train_$(date +%Y%m%d_%H%M%S).log
+      continue-on-error: true
+
+    - name: 📊 Generate Daily Report
+      run: |
+        python -c "
+        import sqlite3
+        from datetime import datetime, timedelta
+
+        conn = sqlite3.connect('titantrader.db')
+        cursor = conn.cursor()
+
+        # Today's stats
+        today = datetime.now().date()
+        cursor.execute('''
+            SELECT COUNT(*), SUM(net_pnl)
+            FROM trades
+            WHERE DATE(timestamp) = ?
+        ''', (str(today),))
+        trade_count, daily_pnl = cursor.fetchone()
+
+        # All-time stats
+        cursor.execute('SELECT COUNT(*), SUM(net_pnl) FROM trades')
+        total_trades, total_pnl = cursor.fetchone()
+
+        print('📊 DAILY REPORT')
+        print(f'Today: {trade_count} trades, P&L: \${daily_pnl or 0:.2f}')
+        print(f'All-time: {total_trades} trades, P&L: \${total_pnl or 0:.2f}')
+
+        conn.close()
+        " 2>&1 | tee -a logs/daily_report.log
+      continue-on-error: true
+
+    - name: 💾 Commit results
+      run: |
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "github-actions[bot]"
+        git add -A 2>/dev/null || true
+        git commit -m "Auto: ML training $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || echo "Nothing to commit"
+        git push || echo "Push skipped"
+      continue-on-error: true
