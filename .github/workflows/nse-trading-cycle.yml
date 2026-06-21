@@ -44,8 +44,13 @@ jobs:
 
     - name: Pre-create jugaad-data cache directories
       run: |
-        mkdir -p ~/.local/share/nsehistory-stock/nsehistory-stock/Cache
-        mkdir -p ~/.local/share/nselive/nselive/Cache
+        python -c "
+        import os, appdirs
+        for name in ['nsehistory-stock', 'nselive']:
+            path = os.path.join(appdirs.user_cache_dir(name), name, 'Cache')
+            os.makedirs(path, exist_ok=True)
+            print('Created:', path)
+        "
 
     - name: Execute trading cycle
       timeout-minutes: 4
