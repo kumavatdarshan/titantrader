@@ -43,16 +43,6 @@ jobs:
           ML_MIN_TRADES_TO_TRAIN=50
           EOF
 
-      - name: Pre-create jugaad-data cache directories
-        run: |
-          python -c "
-          import os, appdirs
-          for name in ['nsehistory-stock', 'nselive']:
-              path = os.path.join(appdirs.user_cache_dir(name), name, 'Cache')
-              os.makedirs(path, exist_ok=True)
-              print('Created:', path)
-          "
-
       - name: Run weekend backtest and learning
         timeout-minutes: 20
         run: |

@@ -92,7 +92,7 @@ class TradingEngine:
                     # Use broker's price fetching for Alpaca (real Alpaca prices)
                     price_data = await self.broker.get_price(symbol)
                 else:
-                    # Use jugaad-data for local paper trading
+                    # Use NseIndiaApi for local paper trading
                     use_mock = Config.is_paper_mode()
                     price_data = await fetch_price(symbol, use_mock=use_mock)
 

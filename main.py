@@ -65,7 +65,7 @@ class TitanTrader:
 
         if Config.TRADING_MODE == "local_paper":
             self.broker = PaperBroker(self.session_factory, Config.STARTING_CAPITAL)
-            logger.info("Using local paper broker (jugaad-data + SQLite)")
+            logger.info("Using local paper broker (NseIndiaApi + SQLite)")
         elif Config.TRADING_MODE.startswith("alpaca"):
             self.broker = AlpacaBroker(self.session_factory, Config.STARTING_CAPITAL)
             logger.info(f"Using Alpaca broker ({Config.TRADING_MODE})")

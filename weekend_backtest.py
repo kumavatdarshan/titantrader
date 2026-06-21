@@ -2,7 +2,7 @@
 """
 Weekend Backtest & Learning Script
 Runs every 30 minutes on Saturday and Sunday via GitHub Actions.
-- Downloads 1 year of real NSE historical data via jugaad-data
+- Downloads 1 year of real NSE historical data via NseIndiaApi
 - Walks forward through it, running all strategies on each candle
 - Simulates trades with slippage and fees, writes them to the DB
 - Trains the ML model once enough trades are accumulated

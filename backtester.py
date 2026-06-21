@@ -38,7 +38,7 @@ class Backtester:
         logger.info(f"Backtest complete. Average win rate: {avg_wr*100:.1f}%")
 
     async def _fetch_data(self, symbol: str) -> pd.DataFrame:
-        """Download 1 year of data via jugaad-data (Indian stocks) or synthetic fallback."""
+        """Download 1 year of data via NseIndiaApi (Indian stocks) or synthetic fallback."""
         from data import fetch_ohlcv_candles
         result = await fetch_ohlcv_candles(symbol, period="1y")
         if not result['success'] or result['data'] is None:
