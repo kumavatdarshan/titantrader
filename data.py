@@ -3,6 +3,7 @@ import os
 import random
 import asyncio
 import time
+import tempfile
 from datetime import datetime, timedelta, date as date_type
 
 import pandas as pd
@@ -11,16 +12,18 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
-# ─── Indian NSE symbols (without .NS suffix) ─────────────────────────────────
+# True when running inside GitHub Actions — use server=True for NseIndiaApi
+ON_GITHUB_ACTIONS = os.environ.get("GITHUB_ACTIONS") == "true"
+
+# ─── Indian NSE symbols ──────────────────────────────────────────────────────
 INDIAN_SYMBOLS = {
     'TCS', 'INFY', 'RELIANCE', 'HDFC', 'BAJAJFINSV', 'MARUTI',
     'SUNPHARMA', 'WIPRO', 'HCLTECH', 'TECHM', 'HDFCBANK', 'ICICIBANK',
     'SBIN', 'KOTAKBANK', 'AXISBANK', 'NIFTY50',
 }
 
-# ─── Fallback mock prices (last resort only) ─────────────────────────────────
+# Fallback mock prices (last resort only)
 MOCK_PRICES = {
-    # US stocks
     "AAPL": 210, "TSLA": 245, "NVDA": 145, "SPY": 545,
     "MSFT": 430, "AMZN": 185, "GOOGL": 175, "META": 520,
     # Indian NSE stocks — both bare and .NS forms
@@ -42,7 +45,6 @@ MOCK_PRICES = {
     "NIFTY50": 24000,
 }
 
-# In-memory cooldown cache: symbol -> (fail_timestamp, fail_count)
 _failed_symbols: dict = {}
 
 
@@ -55,90 +57,80 @@ def _is_indian(symbol: str) -> bool:
     return _bare_symbol(symbol) in INDIAN_SYMBOLS or symbol.endswith(".NS")
 
 
-def _ensure_jugaad_cache() -> None:
-    """
-    jugaad-data has a Windows bug where it crashes if its cache dirs
-    don't already exist. Pre-create them so it never fails on startup.
-    """
-    local = os.path.join(os.path.expanduser("~"), "AppData", "Local")
-    for folder in ("nsehistory-stock", "nselive"):
-        path = os.path.join(local, folder, folder, "Cache")
-        os.makedirs(path, exist_ok=True)
+# ─── NseIndiaApi helpers ─────────────────────────────────────────────────────
 
-
-# ─── jugaad-data helpers ─────────────────────────────────────────────────────
-
-def _jugaad_live_price(symbol: str) -> dict | None:
-    """
-    Fetch real-time NSE price via jugaad-data NSELive.
-    Returns None if market is closed or request fails.
-    """
+def _nse_live_price(symbol: str) -> dict | None:
+    """Fetch real-time NSE price via NseIndiaApi."""
     try:
-        _ensure_jugaad_cache()
-        from jugaad_data.nse import NSELive
-        n = NSELive()
+        from nse import NSE
+        tmp = tempfile.gettempdir()
+        nse = NSE(download_folder=tmp, server=ON_GITHUB_ACTIONS)
         bare = _bare_symbol(symbol)
-        q = n.stock_quote(bare)
-        price_info = q.get("priceInfo", {})
-        last_price = price_info.get("lastPrice")
-        if last_price is None:
+        quote = nse.equityQuote(bare)
+        nse.exit()
+
+        if not quote:
             return None
+
         return {
-            "price": float(last_price),
+            "price": float(quote.get("close", 0)),
             "timestamp": datetime.utcnow(),
-            "source": "jugaad_live",
+            "source": "nse_live",
             "is_stale": False,
-            "volume": int(price_info.get("totalTradedVolume", 0) or 0),
+            "volume": int(quote.get("volume", 0)),
         }
     except Exception as e:
-        logger.debug(f"jugaad live price failed for {symbol}: {e}")
+        logger.debug(f"NSE live price failed for {symbol}: {e}")
         return None
 
 
-def _jugaad_historical(symbol: str, days: int) -> pd.DataFrame | None:
-    """
-    Fetch historical daily OHLCV from NSE via jugaad-data.
-    Returns a DataFrame with columns: Date, Open, High, Low, Close, Volume
-    or None on failure.
-    """
+def _nse_historical(symbol: str, days: int) -> pd.DataFrame | None:
+    """Fetch historical daily OHLCV from NSE via NseIndiaApi."""
     try:
-        _ensure_jugaad_cache()
-        from jugaad_data.nse import stock_df
+        from nse import NSE
+        tmp = tempfile.gettempdir()
+        nse = NSE(download_folder=tmp, server=ON_GITHUB_ACTIONS)
         bare = _bare_symbol(symbol)
         to_dt = date_type.today()
         from_dt = to_dt - timedelta(days=days)
-        df = stock_df(symbol=bare, from_date=from_dt, to_date=to_dt, series="EQ")
-        if df is None or df.empty:
+
+        data = nse.fetch_equity_historical_data(
+            symbol=bare,
+            series="EQ",
+            from_date=from_dt,
+            to_date=to_dt
+        )
+        nse.exit()
+
+        if not data:
             return None
-        # Rename jugaad columns to our standard names
-        df = df.rename(columns={
-            "DATE": "Date",
-            "OPEN": "Open",
-            "HIGH": "High",
-            "LOW": "Low",
-            "CLOSE": "Close",
-            "VOLUME": "Volume",
-        })
-        # Keep only what we need
-        df = df[["Date", "Open", "High", "Low", "Close", "Volume"]].copy()
-        df["Date"] = pd.to_datetime(df["Date"])
+
+        rows = []
+        for bar in data:
+            rows.append({
+                "Date": pd.to_datetime(bar.get("mtimestamp", "")),
+                "Open": float(bar.get("chOpeningPrice", 0)),
+                "High": float(bar.get("chTradeHighPrice", 0)),
+                "Low": float(bar.get("chTradeLowPrice", 0)),
+                "Close": float(bar.get("chClosingPrice", 0)),
+                "Volume": int(bar.get("chTotTradedQty", 0)),
+            })
+
+        if not rows:
+            return None
+
+        df = pd.DataFrame(rows)
         df = df.sort_values("Date").reset_index(drop=True)
-        # Cast numeric columns
-        for col in ("Open", "High", "Low", "Close", "Volume"):
-            df[col] = pd.to_numeric(df[col], errors="coerce")
         df = df.dropna(subset=["Close"])
         return df if not df.empty else None
+
     except Exception as e:
-        logger.warning(f"jugaad historical failed for {symbol}: {e}")
+        logger.warning(f"NSE historical failed for {symbol}: {e}")
         return None
 
 
-
 def _synthetic_ohlcv(symbol: str, periods: int = 252) -> pd.DataFrame:
-    """
-    Generate realistic synthetic OHLCV data as absolute last resort.
-    Uses a random walk with trend phases so strategies can find signals.
-    """
+    """Generate realistic synthetic OHLCV with trend phases."""
     base_price = MOCK_PRICES.get(symbol, MOCK_PRICES.get(_bare_symbol(symbol), 1000))
     dates = pd.bdate_range(end=datetime.utcnow(), periods=periods)
 
@@ -148,7 +140,6 @@ def _synthetic_ohlcv(symbol: str, periods: int = 252) -> pd.DataFrame:
     trend_days = 0
 
     for dt in dates:
-        # Switch trend direction every 20-40 days
         trend_days += 1
         if trend_days > random.randint(20, 40):
             trend = -trend
@@ -192,19 +183,19 @@ def _get_mock_price(symbol: str) -> dict:
     }
 
 
-# ─── Public API ───────────────────────────────────────────────────────────────
+# ─── Public API ────────────────────────────────────────────────────────────
 
 async def fetch_price(symbol: str, use_mock: bool = True) -> dict:
     """
     Fetch current price for a symbol.
 
     For Indian NSE stocks:
-        1. jugaad-data NSELive  (real-time, works only when market is open)
-        2. jugaad-data last close (most recent historical bar)
+        1. NseIndiaApi live (works on GitHub Actions with server=True)
+        2. NseIndiaApi last close (fallback if live fails)
         3. mock fallback
 
     For non-Indian stocks:
-        1. mock fallback (jugaad-data covers NSE only)
+        1. mock fallback
     """
     # Cooldown check — avoid hammering a failing source
     if symbol in _failed_symbols:
@@ -214,34 +205,34 @@ async def fetch_price(symbol: str, use_mock: bool = True) -> dict:
             return _get_mock_price(symbol)
 
     if _is_indian(symbol):
-        # Try live price first (only works during market hours)
+        # Try live price first
         result = await asyncio.get_event_loop().run_in_executor(
-            None, _jugaad_live_price, symbol
+            None, _nse_live_price, symbol
         )
         if result:
             _failed_symbols.pop(symbol, None)
-            logger.info(f"{symbol}: {result['price']:.2f} (source: jugaad_live)")
+            logger.info(f"{symbol}: {result['price']:.2f} (source: nse_live)")
             return result
 
         # Market closed — use latest close from historical
-        logger.debug(f"{symbol}: Live price unavailable, fetching last close...")
+        logger.debug(f"{symbol}: Live unavailable, fetching last close...")
         df = await asyncio.get_event_loop().run_in_executor(
-            None, _jugaad_historical, symbol, 7
+            None, _nse_historical, symbol, 7
         )
         if df is not None and not df.empty:
             _failed_symbols.pop(symbol, None)
             last_close = float(df["Close"].iloc[-1])
-            logger.info(f"{symbol}: {last_close:.2f} (source: jugaad_last_close)")
+            logger.info(f"{symbol}: {last_close:.2f} (source: nse_last_close)")
             return {
                 "price": last_close,
                 "timestamp": datetime.utcnow(),
-                "source": "jugaad_last_close",
+                "source": "nse_last_close",
                 "is_stale": True,
                 "volume": int(df["Volume"].iloc[-1]),
             }
 
     else:
-        # Non-Indian: use mock price (jugaad-data only covers NSE)
+        # Non-Indian: use mock
         if symbol in MOCK_PRICES:
             _failed_symbols.pop(symbol, None)
             result = _get_mock_price(symbol)
@@ -251,7 +242,7 @@ async def fetch_price(symbol: str, use_mock: bool = True) -> dict:
     # All sources failed — use mock
     _failed_symbols[symbol] = (time.time(), _failed_symbols.get(symbol, (0, 0))[1] + 1)
     if use_mock:
-        logger.warning(f"{symbol}: All sources failed — using mock price")
+        logger.warning(f"{symbol}: All sources failed — using mock")
         return _get_mock_price(symbol)
     raise RuntimeError(f"Could not fetch price for {symbol}")
 
@@ -261,11 +252,11 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
     Fetch historical OHLCV candles.
 
     For Indian NSE stocks:
-        1. jugaad-data historical  (real NSE data)
-        2. synthetic mock          (last resort)
+        1. NseIndiaApi historical (works on GitHub Actions with server=True)
+        2. synthetic mock (last resort)
 
     For non-Indian stocks:
-        1. synthetic mock (jugaad-data covers NSE only)
+        1. synthetic mock
 
     period: '1mo' | '3mo' | '6mo' | '1y' | '2y'
     Returns: {symbol, data: DataFrame, rows, source, success, error?}
@@ -277,19 +268,19 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
 
     try:
         if _is_indian(symbol):
-            logger.info(f"{symbol}: Fetching {days}d of NSE historical data...")
+            logger.info(f"{symbol}: Fetching {days}d of NSE historical...")
             df = await asyncio.get_event_loop().run_in_executor(
-                None, _jugaad_historical, symbol, days
+                None, _nse_historical, symbol, days
             )
             if df is not None and not df.empty:
-                logger.info(f"{symbol}: Got {len(df)} bars from jugaad-data")
+                logger.info(f"{symbol}: Got {len(df)} bars from NseIndiaApi")
                 return {"symbol": symbol, "data": df, "rows": len(df),
-                        "source": "jugaad", "success": True}
+                        "source": "nse", "success": True}
 
-            logger.warning(f"{symbol}: jugaad-data returned no data — using synthetic")
+            logger.warning(f"{symbol}: NseIndiaApi returned no data — using synthetic")
 
         else:
-            # Non-Indian symbol: go straight to synthetic (jugaad-data covers NSE only)
+            # Non-Indian: go straight to synthetic
             logger.info(f"{symbol}: Non-Indian symbol — using synthetic data")
 
         # Last resort: synthetic data
