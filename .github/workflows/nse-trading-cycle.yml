@@ -10,7 +10,7 @@ on:
 jobs:
   trade:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     permissions:
       contents: write
 
@@ -43,7 +43,7 @@ jobs:
         EOF
 
     - name: Execute trading cycle
-      timeout-minutes: 4
+      timeout-minutes: 2
       run: |
         python run_cycle.py 2>&1 | tee logs/trade_$(date +%Y%m%d_%H%M%S).log
       continue-on-error: true
