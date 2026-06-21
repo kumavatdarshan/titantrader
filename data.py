@@ -5,6 +5,9 @@ import asyncio
 import time
 import tempfile
 from datetime import datetime, timedelta, date as date_type
+from pathlib import Path
+import urllib.request
+import zipfile
 
 import pandas as pd
 
@@ -14,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 # True when running inside GitHub Actions — use server=True for NseIndiaApi
 ON_GITHUB_ACTIONS = os.environ.get("GITHUB_ACTIONS") == "true"
+
+# ─── Global NSE session (persistent, reused across calls) ──────────────────
+_NSE_INSTANCE = None
 
 # ─── Indian NSE symbols ──────────────────────────────────────────────────────
 INDIAN_SYMBOLS = {
@@ -59,15 +65,84 @@ def _is_indian(symbol: str) -> bool:
 
 # ─── NseIndiaApi helpers ─────────────────────────────────────────────────────
 
-def _nse_live_price(symbol: str) -> dict | None:
-    """Fetch real-time NSE price via NseIndiaApi."""
+def _bhav_copy_fallback(symbol: str, days: int = 365) -> pd.DataFrame | None:
+    """
+    Fetch NSE data from Bhav Copy (official free NSE daily data).
+    Works reliably on GitHub Actions where direct NseIndiaApi fails.
+    Falls back to local cache if download fails.
+    """
     try:
+        bare = _bare_symbol(symbol)
+        to_dt = date_type.today()
+        from_dt = to_dt - timedelta(days=days)
+
+        # Try to fetch recent bhav copy files
+        data_rows = []
+        current_dt = from_dt
+
+        while current_dt <= to_dt:
+            year = current_dt.year
+            month = current_dt.month
+            day = current_dt.day
+
+            date_str = current_dt.strftime("%d%b%Y").upper()
+            url = f"https://www1.nseindia.com/content/historical/EQUITIES/{year}/{month:02d}/{date_str}_EQ.csv"
+
+            try:
+                with urllib.request.urlopen(url, timeout=5) as response:
+                    df = pd.read_csv(response)
+
+                    # Filter for our symbol
+                    symbol_data = df[df['SYMBOL'] == bare]
+                    if not symbol_data.empty:
+                        for _, row in symbol_data.iterrows():
+                            data_rows.append({
+                                "Date": pd.to_datetime(row['DATE1'], format='%d-%b-%Y'),
+                                "Open": float(row['OPEN']),
+                                "High": float(row['HIGH']),
+                                "Low": float(row['LOW']),
+                                "Close": float(row['CLOSE']),
+                                "Volume": int(row['TOTTRDQTY']),
+                            })
+            except (urllib.error.URLError, urllib.error.HTTPError, pd.errors.ParserError):
+                pass
+
+            current_dt += timedelta(days=1)
+
+        if data_rows:
+            df = pd.DataFrame(data_rows)
+            df = df.sort_values("Date").reset_index(drop=True)
+            logger.info(f"{bare}: Retrieved {len(df)} bars from Bhav Copy")
+            return df
+
+        return None
+
+    except Exception as e:
+        logger.debug(f"Bhav Copy fallback failed for {symbol}: {e}")
+        return None
+
+
+def _get_nse_session():
+    """Get or create persistent NSE session (reuse across calls to avoid rate-limiting)."""
+    global _NSE_INSTANCE
+    if _NSE_INSTANCE is None:
         from nse import NSE
         tmp = tempfile.gettempdir()
-        nse = NSE(download_folder=tmp, server=ON_GITHUB_ACTIONS)
+        _NSE_INSTANCE = NSE(
+            download_folder=tmp,
+            server=ON_GITHUB_ACTIONS,
+        )
+        env_mode = "GitHub Actions (HTTP/2)" if ON_GITHUB_ACTIONS else "Local (HTTP/1.1)"
+        logger.info(f"NSE session initialized in {env_mode} mode")
+    return _NSE_INSTANCE
+
+
+def _nse_live_price(symbol: str) -> dict | None:
+    """Fetch real-time NSE price via NseIndiaApi (session-persistent)."""
+    try:
+        nse = _get_nse_session()
         bare = _bare_symbol(symbol)
         quote = nse.equityQuote(bare)
-        nse.exit()
 
         if not quote:
             return None
@@ -85,11 +160,10 @@ def _nse_live_price(symbol: str) -> dict | None:
 
 
 def _nse_historical(symbol: str, days: int) -> pd.DataFrame | None:
-    """Fetch historical daily OHLCV from NSE via NseIndiaApi."""
+    """Fetch historical daily OHLCV from NSE via NseIndiaApi (session-persistent).
+    Falls back to Bhav Copy if NseIndiaApi fails (common on GitHub Actions)."""
     try:
-        from nse import NSE
-        tmp = tempfile.gettempdir()
-        nse = NSE(download_folder=tmp, server=ON_GITHUB_ACTIONS)
+        nse = _get_nse_session()
         bare = _bare_symbol(symbol)
         to_dt = date_type.today()
         from_dt = to_dt - timedelta(days=days)
@@ -100,33 +174,32 @@ def _nse_historical(symbol: str, days: int) -> pd.DataFrame | None:
             from_date=from_dt,
             to_date=to_dt
         )
-        nse.exit()
 
-        if not data:
-            return None
+        if data:
+            rows = []
+            for bar in data:
+                rows.append({
+                    "Date": pd.to_datetime(bar.get("mtimestamp", "")),
+                    "Open": float(bar.get("chOpeningPrice", 0)),
+                    "High": float(bar.get("chTradeHighPrice", 0)),
+                    "Low": float(bar.get("chTradeLowPrice", 0)),
+                    "Close": float(bar.get("chClosingPrice", 0)),
+                    "Volume": int(bar.get("chTotTradedQty", 0)),
+                })
 
-        rows = []
-        for bar in data:
-            rows.append({
-                "Date": pd.to_datetime(bar.get("mtimestamp", "")),
-                "Open": float(bar.get("chOpeningPrice", 0)),
-                "High": float(bar.get("chTradeHighPrice", 0)),
-                "Low": float(bar.get("chTradeLowPrice", 0)),
-                "Close": float(bar.get("chClosingPrice", 0)),
-                "Volume": int(bar.get("chTotTradedQty", 0)),
-            })
+            if rows:
+                df = pd.DataFrame(rows)
+                df = df.sort_values("Date").reset_index(drop=True)
+                df = df.dropna(subset=["Close"])
+                return df if not df.empty else None
 
-        if not rows:
-            return None
-
-        df = pd.DataFrame(rows)
-        df = df.sort_values("Date").reset_index(drop=True)
-        df = df.dropna(subset=["Close"])
-        return df if not df.empty else None
+        # Fallback to Bhav Copy if NseIndiaApi fails
+        logger.debug(f"NseIndiaApi failed for {symbol}, trying Bhav Copy fallback...")
+        return _bhav_copy_fallback(symbol, days)
 
     except Exception as e:
-        logger.warning(f"NSE historical failed for {symbol}: {e}")
-        return None
+        logger.warning(f"NseIndiaApi failed for {symbol}: {e}, trying Bhav Copy...")
+        return _bhav_copy_fallback(symbol, days)
 
 
 def _synthetic_ohlcv(symbol: str, periods: int = 252) -> pd.DataFrame:
@@ -251,9 +324,10 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
     """
     Fetch historical OHLCV candles.
 
-    For Indian NSE stocks:
-        1. NseIndiaApi historical (works on GitHub Actions with server=True)
-        2. synthetic mock (last resort)
+    For Indian NSE stocks (fallback chain):
+        1. NseIndiaApi historical (fastest, real-time capable)
+        2. Bhav Copy (works on GitHub Actions, official NSE data)
+        3. synthetic mock (last resort)
 
     For non-Indian stocks:
         1. synthetic mock
@@ -273,11 +347,11 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
                 None, _nse_historical, symbol, days
             )
             if df is not None and not df.empty:
-                logger.info(f"{symbol}: Got {len(df)} bars from NseIndiaApi")
+                logger.info(f"{symbol}: Got {len(df)} bars from NSE")
                 return {"symbol": symbol, "data": df, "rows": len(df),
                         "source": "nse", "success": True}
 
-            logger.warning(f"{symbol}: NseIndiaApi returned no data — using synthetic")
+            logger.warning(f"{symbol}: All sources failed (NseIndiaApi + Bhav Copy) — using synthetic")
 
         else:
             # Non-Indian: go straight to synthetic
