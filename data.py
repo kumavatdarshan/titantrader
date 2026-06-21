@@ -27,16 +27,37 @@ MOCK_PRICES = {
     "AMZN": 185,
     "GOOGL": 175,
     "META": 520,
-    # Indian NSE stocks
-    "RELIANCE": 2900,
-    "INFY": 1750,
+    # Indian NSE stocks (with and without .NS suffix)
     "TCS": 4100,
+    "TCS.NS": 4100,
+    "INFY": 1750,
+    "INFY.NS": 1750,
+    "RELIANCE": 2900,
+    "RELIANCE.NS": 2900,
+    "HDFC": 2800,
+    "HDFC.NS": 2800,
     "HDFCBANK": 1680,
-    "ICICIBANK": 1200,
+    "HDFCBANK.NS": 1680,
+    "BAJAJFINSV": 1520,
+    "BAJAJFINSV.NS": 1520,
+    "MARUTI": 12500,
+    "MARUTI.NS": 12500,
+    "SUNPHARMA": 850,
+    "SUNPHARMA.NS": 850,
     "WIPRO": 480,
+    "WIPRO.NS": 480,
+    "HCLTECH": 1850,
+    "HCLTECH.NS": 1850,
+    "TECHM": 4200,
+    "TECHM.NS": 4200,
+    "ICICIBANK": 1200,
+    "ICICIBANK.NS": 1200,
     "SBIN": 820,
+    "SBIN.NS": 820,
     "KOTAKBANK": 1750,
+    "KOTAKBANK.NS": 1750,
     "AXISBANK": 1180,
+    "AXISBANK.NS": 1180,
     "NIFTY50": 24000,
 }
 
@@ -60,7 +81,7 @@ async def fetch_price(symbol: str, use_mock: bool = True) -> dict:
                 return _get_mock_price(symbol)
 
         # Determine yfinance symbol
-        indian_symbols = {'RELIANCE', 'INFY', 'TCS', 'HDFCBANK', 'ICICIBANK', 'WIPRO', 'SBIN', 'KOTAKBANK', 'AXISBANK', 'NIFTY50'}
+        indian_symbols = {'TCS', 'INFY', 'RELIANCE', 'HDFC', 'BAJAJFINSV', 'MARUTI', 'SUNPHARMA', 'WIPRO', 'HCLTECH', 'TECHM', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'KOTAKBANK', 'AXISBANK', 'NIFTY50'}
         yf_symbol = symbol if symbol.endswith(".NS") else (symbol + ".NS" if symbol in indian_symbols else symbol)
 
         logger.debug(f"Fetching {yf_symbol} from yfinance...")
@@ -245,7 +266,7 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
         # Fallback to yfinance with retry
         logger.debug(f"Fetching {symbol} from yfinance...")
 
-        indian_symbols = {'RELIANCE', 'INFY', 'TCS', 'HDFCBANK', 'ICICIBANK', 'WIPRO', 'SBIN', 'KOTAKBANK', 'AXISBANK', 'NIFTY50'}
+        indian_symbols = {'TCS', 'INFY', 'RELIANCE', 'HDFC', 'BAJAJFINSV', 'MARUTI', 'SUNPHARMA', 'WIPRO', 'HCLTECH', 'TECHM', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'KOTAKBANK', 'AXISBANK', 'NIFTY50'}
         yf_symbol = symbol if symbol.endswith(".NS") else (symbol + ".NS" if symbol in indian_symbols else symbol)
 
         max_retries = 3
