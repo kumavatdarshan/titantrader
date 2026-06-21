@@ -16,10 +16,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v4
 
     - name: Setup Python 3.11
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         cache: 'pip'
@@ -37,9 +37,15 @@ jobs:
         cat > .env << 'EOF'
         TRADING_MODE=local_paper
         STARTING_CAPITAL=100000
-        SYMBOLS=TCS.NS,INFY.NS,RELIANCE.NS,HDFC.NS,BAJAJFINSV.NS,MARUTI.NS,SUNPHARMA.NS,WIPRO.NS,HCLTECH.NS,TECHM.NS
+        SYMBOLS=TCS.NS,INFY.NS,RELIANCE.NS,BAJAJFINSV.NS,MARUTI.NS,SUNPHARMA.NS,WIPRO.NS,HCLTECH.NS,TECHM.NS
         LOG_LEVEL=INFO
+        ML_MIN_TRADES_TO_TRAIN=50
         EOF
+
+    - name: Pre-create jugaad-data cache directories
+      run: |
+        mkdir -p ~/.local/share/nsehistory-stock/nsehistory-stock/Cache
+        mkdir -p ~/.local/share/nselive/nselive/Cache
 
     - name: Execute trading cycle
       timeout-minutes: 4

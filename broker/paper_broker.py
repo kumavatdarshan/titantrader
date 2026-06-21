@@ -23,7 +23,7 @@ class PaperBroker(Broker):
         self.last_prices = {}
 
     async def get_price(self, symbol: str) -> dict:
-        """Fetch latest price via data layer (yfinance or mock)."""
+        """Fetch latest price via data layer (jugaad-data or mock)."""
         try:
             from config import Config
             use_mock = Config.is_paper_mode()

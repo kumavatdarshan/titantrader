@@ -1,7 +1,6 @@
 import logging
 import pandas as pd
 from datetime import datetime, timedelta
-import yfinance as yf
 from sqlalchemy import select, update
 from db import Strategy as StrategyModel
 from config import Config
@@ -39,25 +38,14 @@ class Backtester:
         logger.info(f"Backtest complete. Average win rate: {avg_wr*100:.1f}%")
 
     async def _fetch_data(self, symbol: str) -> pd.DataFrame:
-        """Download 2 years of data."""
-        try:
-            end = datetime.utcnow()
-            start = end - timedelta(days=730)
-            df = yf.download(symbol, start=start, end=end, progress=False, timeout=10)
-
-            if df.empty:
-                logger.error(f"No data returned for {symbol}")
-                return None
-
-            # Handle MultiIndex columns (when downloading single symbol)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.droplevel(0)
-
-            logger.info(f"Downloaded {len(df)} bars for {symbol}")
-            return df
-        except Exception as e:
-            logger.error(f"Failed to download {symbol}: {e}")
+        """Download 1 year of data via jugaad-data (Indian stocks) or synthetic fallback."""
+        from data import fetch_ohlcv_candles
+        result = await fetch_ohlcv_candles(symbol, period="1y")
+        if not result['success'] or result['data'] is None:
+            logger.error(f"No data returned for {symbol}: {result.get('error', 'unknown')}")
             return None
+        logger.info(f"Downloaded {result['rows']} bars for {symbol} from {result['source']}")
+        return result['data']
 
     async def _walk_forward_test(self, symbol: str, df: pd.DataFrame) -> dict:
         """Walk-forward backtest with honest metrics calculation."""

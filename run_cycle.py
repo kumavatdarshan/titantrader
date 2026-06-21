@@ -31,7 +31,7 @@ async def main():
 
         if Config.TRADING_MODE == "local_paper":
             broker = PaperBroker(session_factory, Config.STARTING_CAPITAL)
-            logger.info("Using local paper broker (yfinance + SQLite)")
+            logger.info("Using local paper broker (jugaad-data + SQLite)")
         else:
             broker = AlpacaBroker(session_factory, Config.STARTING_CAPITAL)
             logger.info(f"Using Alpaca broker ({Config.TRADING_MODE})")

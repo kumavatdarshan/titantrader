@@ -1,0 +1,63 @@
+name: TitanTrader - Weekend Backtest & Learning (NSE)
+
+on:
+  schedule:
+    # Every 30 minutes on Saturday (6) and Sunday (0) — all day
+    # Today is Sunday so this will run today too
+    - cron: '0,30 * * * 0,6'
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+
+      - name: Setup directories
+        run: mkdir -p logs models
+
+      - name: Configure environment
+        run: |
+          cat > .env << 'EOF'
+          TRADING_MODE=local_paper
+          STARTING_CAPITAL=100000
+          SYMBOLS=TCS.NS,INFY.NS,RELIANCE.NS,BAJAJFINSV.NS,MARUTI.NS,SUNPHARMA.NS,WIPRO.NS,HCLTECH.NS,TECHM.NS
+          LOG_LEVEL=INFO
+          ML_MIN_TRADES_TO_TRAIN=50
+          EOF
+
+      - name: Pre-create jugaad-data cache directories
+        run: |
+          mkdir -p ~/.local/share/nsehistory-stock/nsehistory-stock/Cache
+          mkdir -p ~/.local/share/nselive/nselive/Cache
+
+      - name: Run weekend backtest and learning
+        timeout-minutes: 20
+        run: |
+          python weekend_backtest.py 2>&1 | tee logs/weekend_backtest_$(date +%Y%m%d_%H%M%S).log
+
+      - name: Commit results to GitHub
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add titantrader.db models/ logs/ 2>/dev/null || true
+          git commit -m "Auto: Weekend learning $(date -u +'%Y-%m-%d %H:%M UTC')" || echo "Nothing to commit"
+          git push || echo "Push skipped"
+        continue-on-error: true
