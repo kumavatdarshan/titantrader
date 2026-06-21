@@ -2,9 +2,9 @@ name: TitanTrader - ML Model Training (NSE)
 
 on:
   schedule:
-    # Run every night at 10 PM UTC (6 PM ET) after market close (4 PM ET)
-    # 10 PM UTC = 6 PM ET = 2 hours after market close for safety margin
-    - cron: '0 22 * * 1-5'  # Monday-Friday only
+    # Run every evening at 10:30 AM UTC (4:00 PM IST) after NSE close (3:30 PM IST)
+    # Gives 30-min buffer for all trades to settle
+    - cron: '30 10 * * 1-5'  # Monday-Friday only
   workflow_dispatch:
 
 jobs:
@@ -28,6 +28,15 @@ jobs:
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install -r requirements.txt
+
+    - name: Configure environment
+      run: |
+        cat > .env << 'EOF'
+        TRADING_MODE=local_paper
+        STARTING_CAPITAL=100000
+        SYMBOLS=TCS.NS,INFY.NS,RELIANCE.NS,HDFC.NS,BAJAJFINSV.NS,MARUTI.NS,SUNPHARMA.NS,WIPRO.NS,HCLTECH.NS,TECHM.NS
+        LOG_LEVEL=INFO
+        EOF
 
     - name: Setup directories
       run: mkdir -p models logs

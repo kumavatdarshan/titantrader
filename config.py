@@ -12,18 +12,18 @@ class Config:
     DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", 8000))
     TRADE_INTERVAL_MINUTES = int(os.getenv("TRADE_INTERVAL_MINUTES", 30))
 
-    # ===== Universe: Liquid, Low-Correlation Stocks =====
-    SYMBOLS = os.getenv("SYMBOLS", "AAPL,MSFT,GOOGL,AMZN,NVDA,TSLA,META,SPY,QQQ,IWM").split(",")
+    # ===== Universe: Indian NSE Stocks (Large Cap) =====
+    SYMBOLS = os.getenv("SYMBOLS", "TCS.NS,INFY.NS,RELIANCE.NS,HDFC.NS,BAJAJFINSV.NS,MARUTI.NS,SUNPHARMA.NS,WIPRO.NS,HCLTECH.NS,TECHM.NS").split(",")
 
-    # ===== Market Hours (UTC) =====
-    MARKET_OPEN_UTC = "13:30"  # 9:30 AM ET
-    MARKET_CLOSE_UTC = "20:00"  # 4:00 PM ET
-    MARKET_OPEN_HOUR_UTC = 13
-    MARKET_CLOSE_HOUR_UTC = 20
+    # ===== Market Hours (UTC) - NSE (Indian Market) =====
+    MARKET_OPEN_UTC = "03:45"  # 9:15 AM IST (NSE open)
+    MARKET_CLOSE_UTC = "10:00"  # 3:30 PM IST (NSE close)
+    MARKET_OPEN_HOUR_UTC = 3
+    MARKET_CLOSE_HOUR_UTC = 10
 
     # ===== High Probability Trading Windows =====
-    TRADING_HOURS_START = 13  # 9:30 AM ET (market open)
-    TRADING_HOURS_END = 19    # 3:00 PM ET (1hr before close)
+    TRADING_HOURS_START = 4   # 9:30 AM IST (market open + buffer)
+    TRADING_HOURS_END = 9     # 2:30 PM IST (1hr before close)
     FIRST_HOUR_ONLY = False   # Option to only trade first hour for high volatility
 
     # ===== Risk Management (CRITICAL) =====

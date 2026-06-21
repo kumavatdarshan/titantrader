@@ -2,9 +2,9 @@ name: TitanTrader - NSE Trading Cycle (Paper Mode)
 
 on:
   schedule:
-    # Run every 30 minutes during US market hours (9:30 AM - 3:30 PM ET = 1:30 PM - 7:30 PM UTC)
-    # Note: NSE data from yfinance is 15-min delayed, so timing is flexible
-    - cron: '0,30 13-19 * * 1-5'  # Monday-Friday only
+    # Run every 30 minutes during NSE market hours (9:30 AM - 3:00 PM IST = 4:00-9:30 AM UTC)
+    # NSE opens at 9:15 AM IST, closes at 3:30 PM IST
+    - cron: '0,30 4-9 * * 1-5'  # Monday-Friday only
   workflow_dispatch:
 
 jobs:
@@ -32,14 +32,13 @@ jobs:
     - name: Setup directories
       run: mkdir -p logs models
 
-    - name: Configure secrets
+    - name: Configure environment
       run: |
         cat > .env << 'EOF'
-        TRADING_MODE=${{ secrets.TRADING_MODE }}
-        STARTING_CAPITAL=${{ secrets.STARTING_CAPITAL }}
-        SYMBOLS=${{ secrets.SYMBOLS }}
-        ALPACA_API_KEY=${{ secrets.ALPACA_API_KEY }}
-        ALPACA_SECRET_KEY=${{ secrets.ALPACA_SECRET_KEY }}
+        TRADING_MODE=local_paper
+        STARTING_CAPITAL=100000
+        SYMBOLS=TCS.NS,INFY.NS,RELIANCE.NS,HDFC.NS,BAJAJFINSV.NS,MARUTI.NS,SUNPHARMA.NS,WIPRO.NS,HCLTECH.NS,TECHM.NS
+        LOG_LEVEL=INFO
         EOF
 
     - name: Execute trading cycle
