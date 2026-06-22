@@ -66,7 +66,7 @@ class Learner:
             model_path = Path("models/predictor.pkl")
             model_path.parent.mkdir(exist_ok=True)
             with open(model_path, 'wb') as f:
-                pickle.dump(model, f)
+                pickle.dump({'model': model, 'scaler': scaler}, f)
 
             ml_run = MLRun(
                 accuracy=accuracy,
@@ -90,20 +90,7 @@ class Learner:
             if not trades:
                 return None, None
 
-            async with self.session_factory() as session:
-                price_result = await session.execute(select(Price))
-                prices = price_result.scalars().all()
-
-            if not prices:
-                logger.warning("No price history available for feature extraction")
-                return None, None
-
-            price_dict = {}
-            for p in prices:
-                key = (p.symbol, p.timestamp.date())
-                if key not in price_dict:
-                    price_dict[key] = []
-                price_dict[key].append(p)
+            from data import fetch_ohlcv_candles
 
             features_list = []
             targets = []
@@ -112,40 +99,41 @@ class Learner:
                 if not trade.fill_price or trade.qty <= 0:
                     continue
 
-                entry_time = trade.timestamp
-                trade_date = entry_time.date()
-                key = (trade.symbol, trade_date)
+                try:
+                    result = await fetch_ohlcv_candles(trade.symbol, period="1mo")
+                    if not result['success'] or result['data'] is None or len(result['data']) < 26:
+                        continue
 
-                if key not in price_dict or len(price_dict[key]) < 14:
+                    df = result['data']
+                    closes = df['Close'].values
+                    highs = df['High'].values
+                    lows = df['Low'].values
+                    volumes = df['Volume'].values if 'Volume' in df else np.ones(len(closes)) * 1000
+
+                    rsi = self._calculate_rsi(closes)
+                    macd, macd_signal = self._calculate_macd(closes)
+                    bb_upper, bb_middle, bb_lower = self._calculate_bollinger(closes)
+                    atr = self._calculate_atr(highs, lows, closes)
+                    momentum = (closes[-1] - closes[-5]) / closes[-5] if len(closes) >= 5 else 0
+                    volatility = np.std(np.diff(closes) / closes[:-1])
+                    volume_ratio = volumes[-1] / np.mean(volumes) if len(volumes) > 0 else 1
+
+                    features_list.append({
+                        'rsi': rsi[-1],
+                        'macd': macd[-1],
+                        'macd_signal': macd_signal[-1],
+                        'bb_position': (closes[-1] - bb_lower[-1]) / (bb_upper[-1] - bb_lower[-1]) if (bb_upper[-1] - bb_lower[-1]) != 0 else 0.5,
+                        'atr': atr[-1],
+                        'momentum': momentum,
+                        'volatility': volatility,
+                        'volume_ratio': volume_ratio,
+                        'hour_of_day': trade.timestamp.hour,
+                        'day_of_week': trade.timestamp.weekday(),
+                    })
+                    targets.append(1 if (trade.net_pnl or 0) > 0 else 0)
+                except Exception as e:
+                    logger.debug(f"Skipping {trade.symbol}: {e}")
                     continue
-
-                candles = sorted(price_dict[key], key=lambda x: x.timestamp)
-                closes = np.array([c.close for c in candles])
-                highs = np.array([c.high for c in candles])
-                lows = np.array([c.low for c in candles])
-                volumes = np.array([c.volume for c in candles])
-
-                rsi = self._calculate_rsi(closes)
-                macd, macd_signal = self._calculate_macd(closes)
-                bb_upper, bb_middle, bb_lower = self._calculate_bollinger(closes)
-                atr = self._calculate_atr(highs, lows, closes)
-                momentum = (closes[-1] - closes[-5]) / closes[-5] if len(closes) >= 5 else 0
-                volatility = np.std(np.diff(closes) / closes[:-1])
-                volume_ratio = volumes[-1] / np.mean(volumes) if len(volumes) > 0 else 1
-
-                features_list.append({
-                    'rsi': rsi[-1],
-                    'macd': macd[-1],
-                    'macd_signal': macd_signal[-1],
-                    'bb_position': (closes[-1] - bb_lower[-1]) / (bb_upper[-1] - bb_lower[-1]) if (bb_upper[-1] - bb_lower[-1]) != 0 else 0.5,
-                    'atr': atr[-1],
-                    'momentum': momentum,
-                    'volatility': volatility,
-                    'volume_ratio': volume_ratio,
-                    'hour_of_day': entry_time.hour,
-                    'day_of_week': entry_time.weekday(),
-                })
-                targets.append(1 if (trade.net_pnl or 0) > 0 else 0)
 
             if len(features_list) < 15:
                 logger.warning(f"Only {len(features_list)} trades with features. Need at least 15.")

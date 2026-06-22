@@ -51,12 +51,6 @@ class MACDMomentumStrategy(Strategy):
                 reasoning=f"MACD bearish cross, histogram decreasing. Confidence: {confidence:.2f}"
             )
 
-        if hist_positive and hist_increasing:
-            return Signal(direction="BUY", confidence=0.45, reasoning="MACD histogram positive and increasing")
-
-        if not hist_positive and current_hist < prev_hist:
-            return Signal(direction="SELL", confidence=0.45, reasoning="MACD histogram negative and decreasing")
-
         return Signal(direction="HOLD", confidence=0.0, reasoning="No MACD momentum signal")
 
     def _calculate_atr(self, df, period=14):

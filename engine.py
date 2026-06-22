@@ -139,19 +139,19 @@ class TradingEngine:
 
     async def _execute_consensus_trade(self, session, symbol, price, signals):
         """Execute trade with confidence-weighted consensus."""
-        buy_signals = [(name, s) for name, s in signals if s.direction == "BUY" and s.confidence >= 0.25]
-        sell_signals = [(name, s) for name, s in signals if s.direction == "SELL" and s.confidence >= 0.25]
+        buy_signals = [(name, s) for name, s in signals if s.direction == "BUY" and s.confidence >= 0.45]
+        sell_signals = [(name, s) for name, s in signals if s.direction == "SELL" and s.confidence >= 0.45]
 
         buy_count = len(buy_signals)
         sell_count = len(sell_signals)
         buy_confidence = sum(s.confidence for _, s in buy_signals) / len(buy_signals) if buy_signals else 0
         sell_confidence = sum(s.confidence for _, s in sell_signals) / len(sell_signals) if sell_signals else 0
 
-        if buy_count >= 1 and buy_confidence >= 0.25:
+        if buy_count >= 2 and buy_confidence >= 0.45:
             logger.info(f"{symbol}: BUY signal ({buy_count} strategies, confidence={buy_confidence:.2f})")
-            await self._place_buy_order(session, symbol, price)
+            await self._place_buy_order(session, symbol, price, signals)
 
-        elif sell_count >= 1 and sell_confidence >= 0.25:
+        elif sell_count >= 2 and sell_confidence >= 0.45:
             logger.info(f"{symbol}: SELL signal ({sell_count} strategies, confidence={sell_confidence:.2f})")
             await self._place_sell_order(session, symbol, price)
         else:
@@ -177,7 +177,7 @@ class TradingEngine:
         logger.info(f"Trade stats: Win rate={win_rate:.1%}, Avg win=${avg_win:.2f}, Avg loss=${avg_loss:.2f}")
         return win_rate, avg_win, avg_loss
 
-    async def _place_buy_order(self, session, symbol, price):
+    async def _place_buy_order(self, session, symbol, price, signals):
         """Place a buy order if conditions met."""
         try:
             account = await self.broker.get_account()
@@ -191,6 +191,21 @@ class TradingEngine:
             positions = await session.execute(select(Position))
             pos_list = positions.scalars().all()
 
+            if not PositionSizer.check_correlation({p.symbol: p for p in pos_list}):
+                logger.warning(f"{symbol}: Correlation limit reached, skipping buy")
+                return
+
+            candle_result = await fetch_ohlcv_candles(symbol, period="1mo")
+            atr_value = None
+            if candle_result['success'] and candle_result['data'] is not None:
+                df = candle_result['data']
+                if len(df) >= 14:
+                    high_low = df['High'] - df['Low']
+                    high_close = abs(df['High'] - df['Close'].shift())
+                    low_close = abs(df['Low'] - df['Close'].shift())
+                    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+                    atr_value = tr.rolling(14).mean().iloc[-1]
+
             # Get real trade statistics
             win_rate, avg_win, avg_loss = await self._calculate_trade_stats(session)
 
@@ -202,17 +217,29 @@ class TradingEngine:
                 avg_win=avg_win,
                 avg_loss=avg_loss,
                 current_price=price,
-                existing_positions={p.symbol: p for p in pos_list}
+                existing_positions={p.symbol: p for p in pos_list},
+                atr=atr_value
             )
 
             if qty <= 0:
                 logger.warning(f"{symbol}: Cannot size position (qty={qty:.4f})")
                 return
 
+            if atr_value and Config.USE_ATR_STOPS:
+                stop_loss_price = price - (atr_value * Config.ATR_STOP_MULTIPLIER)
+                take_profit_price = price + (price - stop_loss_price) * Config.ATR_TARGET_MULTIPLIER
+                stop_loss_pct = (price - stop_loss_price) / price
+                take_profit_pct = (take_profit_price - price) / price
+            else:
+                stop_loss_price = price * (1 - Config.STOP_LOSS_PCT)
+                take_profit_price = price * (1 + Config.TAKE_PROFIT_PCT)
+                stop_loss_pct = Config.STOP_LOSS_PCT
+                take_profit_pct = Config.TAKE_PROFIT_PCT
+
             order = await self.broker.place_order(
                 symbol, "BUY", qty,
-                stop_loss_pct=Config.STOP_LOSS_PCT,
-                take_profit_pct=Config.TAKE_PROFIT_PCT
+                stop_loss_pct=stop_loss_pct,
+                take_profit_pct=take_profit_pct
             )
 
             new_pos = Position(
@@ -220,14 +247,14 @@ class TradingEngine:
                 qty=qty,
                 avg_entry_price=order.fill_price,
                 strategy_name="consensus",
-                stop_loss_price=order.fill_price * (1 - Config.STOP_LOSS_PCT),
-                take_profit_price=order.fill_price * (1 + Config.TAKE_PROFIT_PCT)
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price
             )
             session.add(new_pos)
             await session.commit()
 
             cost = qty * order.fill_price
-            logger.info(f"{symbol}: BUY order filled. Qty={qty:.4f}, Price=${order.fill_price:.2f}, Cost=${cost:.2f}")
+            logger.info(f"{symbol}: BUY order filled. Qty={qty:.4f}, Price=${order.fill_price:.2f}, Cost=${cost:.2f}, SL=${stop_loss_price:.2f}, TP=${take_profit_price:.2f}")
 
         except Exception as e:
             logger.error(f"{symbol}: Buy order failed: {e}")

@@ -13,21 +13,28 @@ class MLPredictorStrategy(Strategy):
     def __init__(self, min_accuracy=0.58):
         self.min_accuracy = min_accuracy
         self.model = None
+        self.scaler = None
         self.last_accuracy = 0.0
         self._load_model()
 
     def _load_model(self):
-        """Load model from disk if it exists."""
+        """Load model and scaler from disk if they exist."""
         model_path = Path("models/predictor.pkl")
         if model_path.exists():
             try:
                 import pickle
                 with open(model_path, 'rb') as f:
-                    self.model = pickle.load(f)
+                    data = pickle.load(f)
+                if isinstance(data, dict):
+                    self.model = data.get('model')
+                    self.scaler = data.get('scaler')
+                else:
+                    self.model = data
                 logger.info(f"Loaded ML model from {model_path}")
             except Exception as e:
                 logger.error(f"Failed to load model: {e}")
                 self.model = None
+                self.scaler = None
 
     async def generate_signal(self, symbol: str, price_df: pd.DataFrame) -> Signal:
         """ML-based prediction using market features."""
@@ -41,6 +48,9 @@ class MLPredictorStrategy(Strategy):
             features = self._extract_features(price_df)
             if features is None:
                 return Signal(direction="HOLD", confidence=0.0, reasoning="Could not extract features")
+
+            if self.scaler is not None:
+                features = self.scaler.transform([features])[0]
 
             prediction = self.model.predict_proba([features])
             prob_profit = prediction[0][1]

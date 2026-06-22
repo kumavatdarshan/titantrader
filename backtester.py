@@ -48,40 +48,59 @@ class Backtester:
         return result['data']
 
     async def _walk_forward_test(self, symbol: str, df: pd.DataFrame) -> dict:
-        """Walk-forward backtest with honest metrics calculation."""
+        """Walk-forward backtest with EMA strategy signal simulation."""
         total_len = len(df)
         train_len = int(total_len * 0.75)
 
         train_df = df.iloc[:train_len]
-        test_df = df.iloc[train_len:]
+        test_df = df.iloc[train_len:].reset_index(drop=True)
 
         winning_trades = 0
         losing_trades = 0
-        total_pnl = 0
+        total_pnl = 0.0
         daily_returns = []
         peak = test_df.iloc[0]['Close']
         max_drawdown = 0.0
+        position = None
+        entry_price = None
 
-        for i in range(1, len(test_df)):
+        for i in range(50, len(test_df)):
             close = test_df.iloc[i]['Close']
-            prev_close = test_df.iloc[i-1]['Close']
-            ret = (close - prev_close) / prev_close
 
-            daily_returns.append(ret)
+            if i >= 50:
+                ema9 = test_df.iloc[i-49:i+1]['Close'].ewm(span=9).mean().iloc[-1]
+                ema21 = test_df.iloc[i-49:i+1]['Close'].ewm(span=21).mean().iloc[-1]
+                ema50 = test_df.iloc[i-49:i+1]['Close'].ewm(span=50).mean().iloc[-1]
+                prev_ema9 = test_df.iloc[i-50:i]['Close'].ewm(span=9).mean().iloc[-1]
+                prev_ema21 = test_df.iloc[i-50:i]['Close'].ewm(span=21).mean().iloc[-1]
 
-            if ret > 0:
-                winning_trades += 1
-                total_pnl += ret
-            else:
-                losing_trades += 1
-                total_pnl += ret
+                crossover = prev_ema9 <= prev_ema21 and ema9 > ema21
+                crossunder = prev_ema9 >= prev_ema21 and ema9 < ema21
+
+                if crossover and ema21 > ema50 and position is None:
+                    position = "long"
+                    entry_price = close
+                elif crossunder and ema21 < ema50 and position == "long":
+                    pnl = (close - entry_price) * 100 / entry_price
+                    if pnl > 0:
+                        winning_trades += 1
+                    else:
+                        losing_trades += 1
+                    total_pnl += pnl
+                    daily_returns.append(pnl / 100)
+                    position = None
+                    entry_price = None
+
+            if position is None:
+                price_ret = (close - test_df.iloc[i-1]['Close']) / test_df.iloc[i-1]['Close']
+                daily_returns.append(price_ret)
 
             if close > peak:
                 peak = close
             drawdown = (peak - close) / peak
             max_drawdown = max(max_drawdown, drawdown)
 
-        total_trades = winning_trades + losing_trades
+        total_trades = winning_trades + losing_trades if winning_trades + losing_trades > 0 else 1
         win_rate = winning_trades / total_trades if total_trades > 0 else 0
         avg_pnl = total_pnl / total_trades if total_trades > 0 else 0
 

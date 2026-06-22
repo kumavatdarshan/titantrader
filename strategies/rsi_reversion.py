@@ -22,16 +22,10 @@ class RSIReversionStrategy(Strategy):
         std20 = close.rolling(20).std()
         upper_bb = sma20 + (std20 * 2)
         lower_bb = sma20 - (std20 * 2)
-        sma50 = close.rolling(50).mean()
 
         current_price = close.iloc[-1]
         current_lower = lower_bb.iloc[-1]
         current_upper = upper_bb.iloc[-1]
-
-        from datetime import datetime
-        hour = datetime.utcnow().hour
-        if 13 <= hour < 14:
-            return Signal(direction="HOLD", confidence=0.0, reasoning="Skip market open volatility (9:30-10:30 ET)")
 
         momentum = (close.iloc[-1] - close.iloc[-5]) / close.iloc[-5]
         strength = abs(current_rsi - 50) / 50
