@@ -1,6 +1,13 @@
 name: TitanTrader - NSE Trading Cycle (Paper Mode)
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'engine.py'
+      - 'strategies/**'
+      - 'run_cycle.py'
   schedule:
     # Run every 5 minutes on weekdays for testing
     - cron: '*/5 * * * 1-5'
