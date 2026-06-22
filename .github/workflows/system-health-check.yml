@@ -5,8 +5,8 @@ on:
     branches:
       - main
   schedule:
-    # Run every 5 minutes on weekdays for testing
-    - cron: '*/5 * * * 1-5'
+    # Run daily at 3 AM UTC (8:30 AM IST) before NSE opens
+    - cron: '0 3 * * 1-5'
   workflow_dispatch:
 
 jobs:

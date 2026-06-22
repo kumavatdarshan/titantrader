@@ -9,8 +9,8 @@ on:
       - 'strategies/**'
       - 'run_cycle.py'
   schedule:
-    # Run every 5 minutes on weekdays for testing
-    - cron: '*/5 * * * 1-5'
+    # Run every 30 minutes during NSE market hours (9:30 AM - 3 PM IST)
+    - cron: '0,30 4-9 * * 1-5'
   workflow_dispatch:
 
 jobs:
