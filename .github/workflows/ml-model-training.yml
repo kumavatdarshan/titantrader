@@ -4,11 +4,7 @@ on:
   schedule:
     # Run every 5 minutes on weekdays for testing
     - cron: '*/5 * * * 1-5'
-      branches:
-        - main
   workflow_dispatch:
-    branches:
-      - main
 
 jobs:
   train:

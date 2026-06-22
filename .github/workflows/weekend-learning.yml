@@ -4,11 +4,7 @@ on:
   schedule:
     # Every 30 minutes on Saturday (6) and Sunday (0) — all day
     - cron: '0,30 * * * 0,6'
-      branches:
-        - main
   workflow_dispatch:
-    branches:
-      - main
 
 jobs:
   backtest:
