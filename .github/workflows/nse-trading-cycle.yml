@@ -5,7 +5,11 @@ on:
     # Run every 30 minutes during NSE market hours (9:30 AM - 3:00 PM IST = 4:00-9:30 AM UTC)
     # NSE opens at 9:15 AM IST, closes at 3:30 PM IST
     - cron: '0,30 4-9 * * 1-5'
+      branches:
+        - main
   workflow_dispatch:
+    branches:
+      - main
 
 jobs:
   trade:
