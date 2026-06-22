@@ -2,8 +2,8 @@ name: TitanTrader - System Health Check (NSE)
 
 on:
   schedule:
-    # Run every morning at 3 AM UTC (8:30 AM IST) before NSE opens (9:15 AM IST)
-    - cron: '0 3 * * 1-5'
+    # Run every 5 minutes on weekdays for testing
+    - cron: '*/5 * * * 1-5'
       branches:
         - main
   workflow_dispatch:

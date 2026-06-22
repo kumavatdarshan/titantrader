@@ -2,9 +2,8 @@ name: TitanTrader - ML Model Training (NSE)
 
 on:
   schedule:
-    # Run every evening at 10:30 AM UTC (4:00 PM IST) after NSE close (3:30 PM IST)
-    # Gives 30-min buffer for all trades to settle
-    - cron: '30 10 * * 1-5'
+    # Run every 5 minutes on weekdays for testing
+    - cron: '*/5 * * * 1-5'
       branches:
         - main
   workflow_dispatch:
