@@ -68,14 +68,16 @@ jobs:
 
         asyncio.run(train())
         " 2>&1 | tee logs/train_$(date +%Y%m%d_%H%M%S).log
-      continue-on-error: true
+      env:
+        PYTHONUNBUFFERED: "1"
+        TZ: "UTC"
 
     - name: Generate Daily Report
       run: |
         python -c "
         import sqlite3
         import os
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         if not os.path.exists('titantrader.db'):
             print('[REPORT] No trades yet - database not created')
@@ -84,13 +86,13 @@ jobs:
         conn = sqlite3.connect('titantrader.db')
         cursor = conn.cursor()
 
-        # Today's stats
-        today = datetime.now().date()
+        # Today's stats (UTC based)
+        today_utc = datetime.now(timezone.utc).date()
         cursor.execute('''
             SELECT COUNT(*), SUM(net_pnl)
             FROM trades
-            WHERE DATE(timestamp) = ?
-        ''', (str(today),))
+            WHERE DATE(timestamp) >= datetime(?)
+        ''', (today_utc.isoformat() + ' 00:00:00',))
         result = cursor.fetchone()
         trade_count, daily_pnl = (result[0] or 0, result[1] or 0.0) if result else (0, 0.0)
 
@@ -100,7 +102,7 @@ jobs:
         total_trades, total_pnl = (result[0] or 0, result[1] or 0.0) if result else (0, 0.0)
 
         print('[REPORT] Daily Statistics')
-        print(f'Today: {trade_count} trades, P+L: \${daily_pnl:+.2f}')
+        print(f'Today (UTC): {trade_count} trades, P+L: \${daily_pnl:+.2f}')
         print(f'All-time: {total_trades} trades, P+L: \${total_pnl:+.2f}')
 
         conn.close()
@@ -113,5 +115,6 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git add -A 2>/dev/null || true
         git commit -m "Auto: ML training $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || echo "Nothing to commit"
+        git pull --rebase 2>/dev/null || true
         git push || echo "Push skipped"
       continue-on-error: true

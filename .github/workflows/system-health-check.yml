@@ -79,14 +79,16 @@ jobs:
             win_rate = (winners / total_trades) * 100
             print(f"[OK] Win rate: {win_rate:.1f}% ({winners}/{total_trades})")
 
-        # Today's trades
+        # Today's trades (UTC based)
+        from datetime import datetime, timezone
+        today_utc = datetime.now(timezone.utc).date()
         cursor.execute('''
             SELECT COUNT(*), SUM(net_pnl)
             FROM trades
-            WHERE DATE(timestamp) = DATE('now')
-        ''')
+            WHERE DATE(timestamp) >= datetime(?)
+        ''', (today_utc.isoformat() + ' 00:00:00',))
         today_count, today_pnl = cursor.fetchone()
-        print(f"[OK] Today's trades: {today_count or 0} (P&L: ${today_pnl or 0:.2f})")
+        print(f"[OK] Today's trades (UTC): {today_count or 0} (P&L: ${today_pnl or 0:.2f})")
 
         # Warnings
         if total_trades == 0:
