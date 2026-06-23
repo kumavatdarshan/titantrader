@@ -96,7 +96,8 @@ class MLPredictorStrategy(Strategy):
             bb_upper, bb_middle, bb_lower = self._calculate_bollinger(closes)
             atr = self._calculate_atr(highs, lows, closes)[-1]
 
-            momentum = (closes[-1] - closes[-5]) / closes[-5] if len(closes) >= 5 else 0
+            # Protect against zero or negative prices
+            momentum = (closes[-1] - closes[-5]) / max(closes[-5], 1e-10) if len(closes) >= 5 else 0
             volatility = np.std(np.diff(closes) / closes[:-1])
             volume_ratio = volumes[-1] / np.mean(volumes) if len(volumes) > 0 else 1
 

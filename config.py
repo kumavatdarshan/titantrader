@@ -97,10 +97,10 @@ class Config:
             errors.append(f"Invalid trading hours: START={cls.TRADING_HOURS_START}, END={cls.TRADING_HOURS_END}")
 
         if cls.TRADING_HOURS_START < 0 or cls.TRADING_HOURS_START > 23:
-            errors.append(f"TRADING_HOURS_START out of range: {cls.TRADING_HOURS_START}")
+            errors.append(f"TRADING_HOURS_START out of range (0-23): {cls.TRADING_HOURS_START}")
 
-        if cls.TRADING_HOURS_END < 1 or cls.TRADING_HOURS_END > 24:
-            errors.append(f"TRADING_HOURS_END out of range: {cls.TRADING_HOURS_END}")
+        if cls.TRADING_HOURS_END < 1 or cls.TRADING_HOURS_END > 24:  # Allow 24 for EOD
+            errors.append(f"TRADING_HOURS_END out of range (1-24): {cls.TRADING_HOURS_END}")
 
         # Risk parameters validation
         if cls.RISK_PER_TRADE_PCT <= 0 or cls.RISK_PER_TRADE_PCT > 0.5:

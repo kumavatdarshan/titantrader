@@ -114,8 +114,10 @@ class Learner:
                     macd, macd_signal = self._calculate_macd(closes)
                     bb_upper, bb_middle, bb_lower = self._calculate_bollinger(closes)
                     atr = self._calculate_atr(highs, lows, closes)
-                    momentum = (closes[-1] - closes[-5]) / closes[-5] if len(closes) >= 5 else 0
-                    volatility = np.std(np.diff(closes) / closes[:-1])
+                    momentum = (closes[-1] - closes[-5]) / np.maximum(closes[-5], 1e-10) if len(closes) >= 5 else 0
+                    # Protect against zero prices in volatility calculation
+                    safe_closes = np.maximum(closes[:-1], 1e-10)
+                    volatility = np.std(np.diff(closes) / safe_closes)
                     volume_ratio = volumes[-1] / np.mean(volumes) if len(volumes) > 0 else 1
 
                     features_list.append({
@@ -139,17 +141,22 @@ class Learner:
                 return None, None, None
 
             df = pd.DataFrame(features_list)
+            targets_array = np.array(targets)  # Convert early
+
             df = df.fillna(df.median())
 
             if df.isnull().any().any():
                 logger.warning("NaN values remain after fillna, dropping affected rows")
-                df = df.dropna()
+                # Get indices of valid rows
+                valid_mask = ~df.isnull().any(axis=1)
+                df = df[valid_mask]
+                targets_array = targets_array[valid_mask]  # CRITICAL: Keep X and y aligned
                 if len(df) < 10:
                     logger.error("Not enough valid data after NaN removal")
                     return None, None, None
 
             X = df[['rsi', 'macd', 'macd_signal', 'bb_position', 'atr', 'momentum', 'volatility', 'volume_ratio']].values
-            y = np.array(targets)
+            y = targets_array
 
             scaler = StandardScaler()
             X = scaler.fit_transform(X)

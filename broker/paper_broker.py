@@ -215,6 +215,8 @@ class PaperBroker(Broker):
         await session.flush()
         await session.commit()
 
+        position_cost = abs(pos.qty * pos.avg_entry_price)
+        pnl_pct = (net_pnl / position_cost * 100) if position_cost > 0 else 0.0
         logger.info(
-            f"{pos.symbol}: Closed via {reason} | Net P&L: ${net_pnl:.2f} ({net_pnl/abs(pos.qty * pos.avg_entry_price)*100:.2f}%)"
+            f"{pos.symbol}: Closed via {reason} | Net P&L: ${net_pnl:.2f} ({pnl_pct:.2f}%)"
         )

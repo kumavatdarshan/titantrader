@@ -25,7 +25,9 @@ class VolatilityBreakoutStrategy(Strategy):
         volatility_ratio = current_atr / atr_sma if atr_sma > 0 else 1.0
         price_position = (current_price - lowest_20) / (highest_20 - lowest_20) if highest_20 > lowest_20 else 0.5
 
-        momentum = (close.iloc[-1] - close.iloc[-5]) / close.iloc[-5]
+        # Protect against zero or negative prices
+        safe_price_5 = max(close.iloc[-5], 1e-10)
+        momentum = (close.iloc[-1] - close.iloc[-5]) / safe_price_5
 
         if volatility_ratio > 1.2 and price_position > 0.7 and momentum > 0.02:
             confidence = min((volatility_ratio - 1.0) * abs(momentum) * 0.8, 1.0)

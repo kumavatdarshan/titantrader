@@ -253,15 +253,15 @@ class TradingEngine:
                 # Need at least 20 candles for rolling(14) to produce valid (non-NaN) values
                 if len(df) >= 20:
                     high_low = df['High'] - df['Low']
-                    high_close = abs(df['High'] - df['Close'].shift())
-                    low_close = abs(df['Low'] - df['Close'].shift())
+                    high_close = abs(df['High'] - df['Close'].shift()).fillna(0)
+                    low_close = abs(df['Low'] - df['Close'].shift()).fillna(0)
                     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
                     atr_series = tr.rolling(14).mean()
-                    # Check that we have a valid (non-NaN) ATR value
-                    if not pd.isna(atr_series.iloc[-1]):
+                    # Check entire series for NaN values
+                    if atr_series.notna().any() and not pd.isna(atr_series.iloc[-1]):
                         atr_value = atr_series.iloc[-1]
                     else:
-                        logger.warning(f"{symbol}: ATR calculation resulted in NaN, using fallback")
+                        logger.warning(f"{symbol}: ATR calculation produced invalid values")
                         atr_value = None
 
             # Get real historical trade statistics (not just open positions)
@@ -350,7 +350,8 @@ class TradingEngine:
 
                     # Calculate P&L accounting for all costs
                     gross_pnl = (order.fill_price - position.avg_entry_price) * position.qty
-                    slippage_cost = price * (Config.SLIPPAGE_BPS / 10000) * position.qty
+                    # Slippage is the actual difference between market price and fill price
+                    slippage_cost = abs(order.fill_price - price) * position.qty
                     fee_cost = order.fill_price * position.qty * Config.FEE_RATE
                     net_pnl = gross_pnl - slippage_cost - fee_cost
 

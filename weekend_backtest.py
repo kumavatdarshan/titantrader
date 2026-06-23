@@ -121,6 +121,9 @@ async def _simulate_symbol(symbol: str, strategies: list, session_factory) -> di
         elif open_position is None and buy_votes >= 2:
             # Open a new position
             fill = current_price * (1 + slippage)   # buy at slight premium
+            if fill <= 0:
+                logger.warning(f"[{symbol}] Invalid fill price {fill}, skipping")
+                continue
             qty = round(capital_per_trade / fill, 4)
             if qty <= 0:
                 continue

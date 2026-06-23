@@ -27,7 +27,9 @@ class RSIReversionStrategy(Strategy):
         current_lower = lower_bb.iloc[-1]
         current_upper = upper_bb.iloc[-1]
 
-        momentum = (close.iloc[-1] - close.iloc[-5]) / close.iloc[-5]
+        # Protect against zero or negative prices
+        safe_price_5 = max(close.iloc[-5], 1e-10)
+        momentum = (close.iloc[-1] - close.iloc[-5]) / safe_price_5
         strength = abs(current_rsi - 50) / 50
 
         if current_rsi < 25 and current_price < current_lower * 0.98 and momentum < -0.03:
