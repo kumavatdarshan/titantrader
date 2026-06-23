@@ -31,6 +31,7 @@ class Config:
     MAX_OPEN_POSITIONS = 5     # Max 5 concurrent positions
     MAX_DAILY_LOSS_PCT = 0.10  # Stop trading if down 10% in a day (circuit breaker)
     MAX_POSITION_PCT = float(os.getenv("MAX_POSITION_PCT", 0.15))  # Max 15% of portfolio in one position
+    MAX_DAILY_TRADES = 20      # Max 20 trades per day to prevent over-trading
 
     # ===== ATR-Based Dynamic Stops =====
     USE_ATR_STOPS = True       # Use ATR for stops instead of fixed %

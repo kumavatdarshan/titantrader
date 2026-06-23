@@ -64,6 +64,19 @@ class TradingEngine:
         except Exception as e:
             logger.error(f"Trading cycle error: {e}", exc_info=True)
 
+    async def _count_today_trades(self, session) -> int:
+        """Count how many trades were executed today."""
+        try:
+            today = datetime.utcnow().date()
+            result = await session.execute(
+                select(Trade).where(Trade.timestamp >= datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0))
+            )
+            trades = result.scalars().all()
+            return len(trades)
+        except Exception as e:
+            logger.error(f"Failed to count daily trades: {e}")
+            return 0
+
     async def _check_drawdown_guard(self):
         """Check if drawdown exceeds limit (circuit breaker)."""
         account = await self.broker.get_account()
@@ -162,20 +175,28 @@ class TradingEngine:
 
     async def _execute_consensus_trade(self, session, symbol, price, signals):
         """Execute trade with confidence-weighted consensus."""
+        # Check daily trade limit
+        daily_trades = await self._count_today_trades(session)
+        if daily_trades >= Config.MAX_DAILY_TRADES:
+            logger.warning(f"{symbol}: Max daily trades ({Config.MAX_DAILY_TRADES}) reached, skipping")
+            return
+
+        # Filter signals by minimum confidence threshold
         buy_signals = [(name, s) for name, s in signals if s.direction == "BUY" and s.confidence >= 0.45]
         sell_signals = [(name, s) for name, s in signals if s.direction == "SELL" and s.confidence >= 0.45]
 
         buy_count = len(buy_signals)
         sell_count = len(sell_signals)
-        buy_confidence = sum(s.confidence for _, s in buy_signals) / len(buy_signals) if buy_signals else 0
-        sell_confidence = sum(s.confidence for _, s in sell_signals) / len(sell_signals) if sell_signals else 0
+        buy_confidence = sum(s.confidence for _, s in buy_signals) / buy_count if buy_count > 0 else 0.0
+        sell_confidence = sum(s.confidence for _, s in sell_signals) / sell_count if sell_count > 0 else 0.0
 
-        if buy_count >= 2 and buy_confidence >= 0.45:
-            logger.info(f"{symbol}: BUY signal ({buy_count} strategies, confidence={buy_confidence:.2f})")
+        # Require consensus: at least 2 strategies must agree
+        if buy_count >= 2:
+            logger.info(f"{symbol}: BUY consensus ({buy_count} strategies, avg confidence={buy_confidence:.2f}) [{daily_trades+1}/{Config.MAX_DAILY_TRADES}]")
             await self._place_buy_order(session, symbol, price, signals)
 
-        elif sell_count >= 2 and sell_confidence >= 0.45:
-            logger.info(f"{symbol}: SELL signal ({sell_count} strategies, confidence={sell_confidence:.2f})")
+        elif sell_count >= 2:
+            logger.info(f"{symbol}: SELL consensus ({sell_count} strategies, avg confidence={sell_confidence:.2f}) [{daily_trades+1}/{Config.MAX_DAILY_TRADES}]")
             await self._place_sell_order(session, symbol, price)
         else:
             logger.debug(f"{symbol}: No consensus (BUY:{buy_count}@{buy_confidence:.2f}, SELL:{sell_count}@{sell_confidence:.2f})")

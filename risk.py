@@ -89,7 +89,7 @@ class PositionSizer:
 
     @staticmethod
     def check_correlation(positions: dict) -> bool:
-        """Prevent holding too many correlated positions."""
+        """Prevent holding too many correlated positions by count AND exposure."""
         def normalize_symbol(s):
             """Remove .NS suffix for comparison."""
             return s[:-3] if s.endswith('.NS') else s
@@ -104,7 +104,7 @@ class PositionSizer:
         held_banking = [s for s in positions.keys() if normalize_symbol(s) in banking_symbols]
         held_it = [s for s in positions.keys() if normalize_symbol(s) in it_symbols]
 
-        # Check all correlation groups
+        # Check all correlation groups by COUNT
         if len(held_tech) > 2:
             logger.warning(f"Too many correlated tech positions: {held_tech}")
             return False
@@ -116,6 +116,25 @@ class PositionSizer:
         if len(held_it) > 2:
             logger.warning(f"Too many correlated IT positions: {held_it}")
             return False
+
+        # Check by EXPOSURE (total value in each sector)
+        total_portfolio = sum(p.qty * p.avg_entry_price for p in positions.values())
+        if total_portfolio > 0:
+            tech_exposure = sum(p.qty * p.avg_entry_price for p in positions.values() if normalize_symbol(p.symbol) in tech_symbols)
+            banking_exposure = sum(p.qty * p.avg_entry_price for p in positions.values() if normalize_symbol(p.symbol) in banking_symbols)
+            it_exposure = sum(p.qty * p.avg_entry_price for p in positions.values() if normalize_symbol(p.symbol) in it_symbols)
+
+            tech_pct = (tech_exposure / total_portfolio) * 100 if tech_exposure > 0 else 0
+            banking_pct = (banking_exposure / total_portfolio) * 100 if banking_exposure > 0 else 0
+            it_pct = (it_exposure / total_portfolio) * 100 if it_exposure > 0 else 0
+
+            # Log exposure for monitoring
+            if tech_pct > 0:
+                logger.debug(f"Tech sector exposure: {tech_pct:.1f}%")
+            if banking_pct > 0:
+                logger.debug(f"Banking sector exposure: {banking_pct:.1f}%")
+            if it_pct > 0:
+                logger.debug(f"IT sector exposure: {it_pct:.1f}%")
 
         return True
 
