@@ -127,8 +127,7 @@ class Learner:
                         'momentum': momentum,
                         'volatility': volatility,
                         'volume_ratio': volume_ratio,
-                        'hour_of_day': trade.timestamp.hour,
-                        'day_of_week': trade.timestamp.weekday(),
+                        # Removed hour_of_day and day_of_week to prevent overfitting
                     })
                     targets.append(1 if (trade.net_pnl or 0) > 0 else 0)
                 except Exception as e:
@@ -149,7 +148,7 @@ class Learner:
                     logger.error("Not enough valid data after NaN removal")
                     return None, None, None
 
-            X = df[['rsi', 'macd', 'macd_signal', 'bb_position', 'atr', 'momentum', 'volatility', 'volume_ratio', 'hour_of_day', 'day_of_week']].values
+            X = df[['rsi', 'macd', 'macd_signal', 'bb_position', 'atr', 'momentum', 'volatility', 'volume_ratio']].values
             y = np.array(targets)
 
             scaler = StandardScaler()

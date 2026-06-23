@@ -116,8 +116,8 @@ class MLPredictorStrategy(Strategy):
                 momentum,
                 volatility,
                 volume_ratio,
-                hour,
-                day,
+                # Removed hour and day to prevent overfitting to specific times
+                # Models should work across different trading hours
             ]
 
             return np.array(features)

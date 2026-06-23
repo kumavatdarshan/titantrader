@@ -34,8 +34,14 @@ class TradingEngine:
             logger.info("TRADING CYCLE START")
             logger.info("=" * 60)
 
-            # Skip if outside market hours
+            # Check if it's time to close all positions (market close)
             current_hour_utc = datetime.utcnow().hour
+            if current_hour_utc >= Config.MARKET_CLOSE_HOUR_UTC:
+                logger.info(f"Market closed ({current_hour_utc}:00 UTC >= {Config.MARKET_CLOSE_HOUR_UTC}:00 UTC). Closing all positions for overnight gap protection.")
+                await self._close_all_positions()
+                return
+
+            # Skip if outside market hours
             if not (Config.TRADING_HOURS_START <= current_hour_utc < Config.TRADING_HOURS_END):
                 logger.warning(f"Outside trading hours ({current_hour_utc}:00 UTC). Skipping cycle.")
                 return
@@ -176,23 +182,27 @@ class TradingEngine:
 
     async def _calculate_trade_stats(self, session):
         """Calculate win rate and avg win/loss from closed trades."""
-        trades = (await session.execute(select(Trade))).scalars().all()
+        try:
+            trades = (await session.execute(select(Trade))).scalars().all()
 
-        if len(trades) < 10:
-            return 0.52, 100, 100  # Default conservative stats
+            if len(trades) < 10:
+                return 0.52, 100, 100  # Default conservative stats
 
-        winners = [t.net_pnl for t in trades if t.net_pnl > 0]
-        losers = [abs(t.net_pnl) for t in trades if t.net_pnl < 0]
+            winners = [t.net_pnl for t in trades if t.net_pnl > 0]
+            losers = [abs(t.net_pnl) for t in trades if t.net_pnl < 0]
 
-        if not winners or not losers:
-            return 0.52, 100, 100
+            if not winners or not losers:
+                return 0.52, 100, 100
 
-        win_rate = len(winners) / len(trades)
-        avg_win = sum(winners) / len(winners) if winners else 100
-        avg_loss = sum(losers) / len(losers) if losers else 100
+            win_rate = len(winners) / len(trades)
+            avg_win = sum(winners) / len(winners) if winners else 100
+            avg_loss = sum(losers) / len(losers) if losers else 100
 
-        logger.info(f"Trade stats: Win rate={win_rate:.1%}, Avg win=${avg_win:.2f}, Avg loss=${avg_loss:.2f}")
-        return win_rate, avg_win, avg_loss
+            logger.info(f"Trade stats: Win rate={win_rate:.1%}, Avg win=${avg_win:.2f}, Avg loss=${avg_loss:.2f}")
+            return win_rate, avg_win, avg_loss
+        except Exception as e:
+            logger.error(f"Failed to calculate trade stats: {e}", exc_info=True)
+            return 0.52, 100, 100  # Return defaults on error
 
     async def _place_buy_order(self, session, symbol, price, signals):
         """Place a buy order if conditions met."""
@@ -274,10 +284,13 @@ class TradingEngine:
             session.add(entry_trade)
             await session.flush()  # Flush to get the trade ID
 
+            # Account for costs in avg_entry_price for accurate P&L calculation
+            cost_per_share = order.fill_price + (Config.SLIPPAGE_BPS / 10000) + (Config.FEE_RATE)
+
             new_pos = Position(
                 symbol=symbol,
                 qty=qty,
-                avg_entry_price=order.fill_price,
+                avg_entry_price=cost_per_share,
                 strategy_name="consensus",
                 stop_loss_price=stop_loss_price,
                 take_profit_price=take_profit_price
@@ -298,32 +311,40 @@ class TradingEngine:
             position = pos_result.scalar_one_or_none()
 
             if position:
-                # Place order FIRST - if it fails, don't delete position from DB
-                order = await self.broker.place_order(symbol, "SELL", position.qty)
+                try:
+                    # Place order FIRST - if it fails, don't delete position from DB
+                    order = await self.broker.place_order(symbol, "SELL", position.qty)
 
-                # Calculate P&L accounting for all costs
-                gross_pnl = (order.fill_price - position.avg_entry_price) * position.qty
-                slippage_cost = price * (Config.SLIPPAGE_BPS / 10000) * position.qty
-                fee_cost = order.fill_price * position.qty * Config.FEE_RATE
-                net_pnl = gross_pnl - slippage_cost - fee_cost
+                    # Calculate P&L accounting for all costs
+                    gross_pnl = (order.fill_price - position.avg_entry_price) * position.qty
+                    slippage_cost = price * (Config.SLIPPAGE_BPS / 10000) * position.qty
+                    fee_cost = order.fill_price * position.qty * Config.FEE_RATE
+                    net_pnl = gross_pnl - slippage_cost - fee_cost
 
-                # Only after successful order, create trade record and close position
-                trade = Trade(
-                    symbol=symbol,
-                    side="SELL",
-                    qty=position.qty,
-                    fill_price=order.fill_price,
-                    gross_pnl=gross_pnl,
-                    slippage_cost=slippage_cost,
-                    fee_cost=fee_cost,
-                    net_pnl=net_pnl,
-                    strategy_name=position.strategy_name,
-                    entry_trade_id=position.id
-                )
-                session.add(trade)
-                session.delete(position)
-                await session.commit()
-                logger.info(f"{symbol}: Position closed. P&L: ${net_pnl:.2f} (gross: ${gross_pnl:.2f}, costs: ${slippage_cost + fee_cost:.2f})")
+                    # Only after successful order, create trade record and close position
+                    trade = Trade(
+                        symbol=symbol,
+                        side="SELL",
+                        qty=position.qty,
+                        fill_price=order.fill_price,
+                        gross_pnl=gross_pnl,
+                        slippage_cost=slippage_cost,
+                        fee_cost=fee_cost,
+                        net_pnl=net_pnl,
+                        strategy_name=position.strategy_name,
+                        entry_trade_id=position.id
+                    )
+                    session.add(trade)
+                    session.delete(position)
+                    await session.commit()
+                    logger.info(f"{symbol}: Position closed. P&L: ${net_pnl:.2f} (gross: ${gross_pnl:.2f}, costs: ${slippage_cost + fee_cost:.2f})")
+                except Exception as db_err:
+                    logger.error(f"{symbol}: DB error while closing position: {db_err}", exc_info=True)
+                    try:
+                        await session.rollback()
+                    except:
+                        pass
+                    raise
             else:
                 logger.debug(f"{symbol}: No position to close")
 
