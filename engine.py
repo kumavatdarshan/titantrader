@@ -283,7 +283,7 @@ class TradingEngine:
                 logger.warning(f"{symbol}: Cannot size position (qty={qty:.4f})")
                 return
 
-            if atr_value and Config.USE_ATR_STOPS:
+            if atr_value and Config.USE_ATR_STOPS and price > 0:
                 stop_loss_price = price - (atr_value * Config.ATR_STOP_MULTIPLIER)
                 take_profit_price = price + (price - stop_loss_price) * Config.ATR_TARGET_MULTIPLIER
                 stop_loss_pct = (price - stop_loss_price) / price
