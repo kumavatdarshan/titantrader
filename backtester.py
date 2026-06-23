@@ -82,7 +82,7 @@ class Backtester:
                     entry_price = close
                 elif crossunder and ema21 < ema50 and position == "long":
                     # Calculate P&L as percentage return (not multiplied by 100)
-                    pnl_pct = (close - entry_price) / entry_price
+                    pnl_pct = (close - entry_price) / entry_price if entry_price > 0 else 0.0
                     if pnl_pct > 0:
                         winning_trades += 1
                     else:
@@ -103,7 +103,7 @@ class Backtester:
 
             if close > peak:
                 peak = close
-            drawdown = (peak - close) / peak
+            drawdown = (peak - close) / peak if peak > 0 else 0.0
             max_drawdown = max(max_drawdown, drawdown)
 
         total_trades = winning_trades + losing_trades if winning_trades + losing_trades > 0 else 1
