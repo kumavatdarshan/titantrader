@@ -22,8 +22,8 @@ class Config:
     MARKET_CLOSE_HOUR_UTC = 10
 
     # ===== High Probability Trading Windows =====
-    TRADING_HOURS_START = 4   # 9:30 AM IST (market open + buffer)
-    TRADING_HOURS_END = 9     # 2:30 PM IST (1hr before close)
+    TRADING_HOURS_START = 4   # 9:30 AM IST (4 AM UTC)
+    TRADING_HOURS_END = 10    # 3:30 PM IST (10 AM UTC) - full NSE market hours
     FIRST_HOUR_ONLY = False   # Option to only trade first hour for high volatility
 
     # ===== Risk Management (CRITICAL) =====

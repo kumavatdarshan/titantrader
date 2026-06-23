@@ -61,9 +61,12 @@ class PositionSizer:
         qty_by_risk = max_risk_dollars / risk_per_share
 
         # ===== Kelly-Based Sizing =====
-        if len(existing_positions) < Config.MIN_KELLY_TRADES:
-            kelly_fraction = Config.KELLY_FRACTION_CAP * 0.5  # Conservative before we have data
-            logger.debug(f"{symbol}: Using fixed 50% Kelly (< {Config.MIN_KELLY_TRADES} trades)")
+        # NOTE: Caller should pass historical trade count, not current position count
+        # If we have few historical trades, use conservative Kelly
+        if win_rate == 0.52 and avg_win == 100 and avg_loss == 100:
+            # Default conservative stats indicate insufficient history
+            kelly_fraction = Config.KELLY_FRACTION_CAP * 0.5
+            logger.debug(f"{symbol}: Using fixed 50% Kelly (insufficient trade history)")
         else:
             kelly_fraction = PositionSizer.calculate_kelly(win_rate, avg_win, avg_loss)
 
@@ -87,15 +90,19 @@ class PositionSizer:
     @staticmethod
     def check_correlation(positions: dict) -> bool:
         """Prevent holding too many correlated positions."""
+        def normalize_symbol(s):
+            """Remove .NS suffix for comparison."""
+            return s[:-3] if s.endswith('.NS') else s
+
         # Tech sector correlation group
         tech_symbols = {'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'META'}
-        held_tech = [s for s in positions.keys() if s in tech_symbols]
+        held_tech = [s for s in positions.keys() if normalize_symbol(s) in tech_symbols]
 
-        # Indian banking/IT correlation groups
+        # Indian banking/IT correlation groups (with and without .NS)
         banking_symbols = {'HDFCBANK', 'ICICIBANK', 'SBIN', 'KOTAKBANK', 'AXISBANK'}
         it_symbols = {'INFY', 'TCS', 'WIPRO', 'HCLTECH', 'TECHM'}
-        held_banking = [s for s in positions.keys() if s in banking_symbols]
-        held_it = [s for s in positions.keys() if s in it_symbols]
+        held_banking = [s for s in positions.keys() if normalize_symbol(s) in banking_symbols]
+        held_it = [s for s in positions.keys() if normalize_symbol(s) in it_symbols]
 
         # Check all correlation groups
         if len(held_tech) > 2:

@@ -20,21 +20,26 @@ class MLPredictorStrategy(Strategy):
     def _load_model(self):
         """Load model and scaler from disk if they exist."""
         model_path = Path("models/predictor.pkl")
-        if model_path.exists():
-            try:
-                import pickle
-                with open(model_path, 'rb') as f:
-                    data = pickle.load(f)
-                if isinstance(data, dict):
-                    self.model = data.get('model')
-                    self.scaler = data.get('scaler')
-                else:
-                    self.model = data
-                logger.info(f"Loaded ML model from {model_path}")
-            except Exception as e:
-                logger.error(f"Failed to load model: {e}")
-                self.model = None
-                self.scaler = None
+        if not model_path.exists():
+            logger.info(f"ML model not found at {model_path}. ML strategy will be disabled until model is trained.")
+            self.model = None
+            self.scaler = None
+            return
+
+        try:
+            import pickle
+            with open(model_path, 'rb') as f:
+                data = pickle.load(f)
+            if isinstance(data, dict):
+                self.model = data.get('model')
+                self.scaler = data.get('scaler')
+            else:
+                self.model = data
+            logger.info(f"✓ Loaded ML model from {model_path}")
+        except Exception as e:
+            logger.error(f"CRITICAL: Failed to load ML model from {model_path}: {e}")
+            self.model = None
+            self.scaler = None
 
     async def generate_signal(self, symbol: str, price_df: pd.DataFrame) -> Signal:
         """ML-based prediction using market features."""

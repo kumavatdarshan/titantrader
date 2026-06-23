@@ -2,7 +2,7 @@ import logging
 import asyncio
 from datetime import datetime
 from sqlalchemy import select
-from broker.base import Broker
+from broker.base import Broker, DataUnavailableError
 from strategies import EMACrossStrategy, RSIReversionStrategy, MACDMomentumStrategy, MLPredictorStrategy, VolatilityBreakoutStrategy
 from db import Position, Trade, Strategy as StrategyModel, EquitySnapshot, Lesson
 from config import Config
@@ -86,6 +86,9 @@ class TradingEngine:
     async def _fetch_all_prices(self) -> dict:
         """Fetch current prices for all symbols."""
         prices = {}
+        stale_symbols = []
+        failed_symbols = []
+
         for symbol in Config.SYMBOLS:
             try:
                 if Config.TRADING_MODE.startswith("alpaca"):
@@ -96,17 +99,31 @@ class TradingEngine:
                     use_mock = Config.is_paper_mode()
                     price_data = await fetch_price(symbol, use_mock=use_mock)
 
-                prices[symbol] = price_data['price']
-                age_min = (datetime.utcnow() - price_data['timestamp']).total_seconds() / 60
-                logger.info(f"{symbol}: ${price_data['price']:.2f} ({age_min:.1f}min old)")
+                if price_data.get('is_stale'):
+                    age_min = (datetime.utcnow() - price_data['timestamp']).total_seconds() / 60
+                    logger.warning(f"{symbol}: STALE PRICE (age: {age_min:.1f}min) - skipping")
+                    stale_symbols.append(symbol)
+                else:
+                    prices[symbol] = price_data['price']
+                    age_min = (datetime.utcnow() - price_data['timestamp']).total_seconds() / 60
+                    logger.info(f"{symbol}: ${price_data['price']:.2f} ({age_min:.1f}min old)")
+            except DataUnavailableError as e:
+                logger.warning(f"{symbol}: DATA UNAVAILABLE - {e}")
+                stale_symbols.append(symbol)
             except Exception as e:
-                logger.error(f"Failed to fetch {symbol}: {e}")
+                logger.error(f"{symbol}: Failed to fetch - {e}")
+                failed_symbols.append(symbol)
 
         if not prices:
-            logger.warning("NO PRICES FETCHED - Cannot trade")
+            logger.error("NO PRICES FETCHED - Cannot trade")
             return prices
 
-        logger.info(f"Fetched {len(prices)} prices: {list(prices.keys())}")
+        if stale_symbols:
+            logger.warning(f"Skipped {len(stale_symbols)} symbols due to stale data: {stale_symbols}")
+        if failed_symbols:
+            logger.error(f"Failed to fetch {len(failed_symbols)} symbols: {failed_symbols}")
+
+        logger.info(f"Fetched {len(prices)}/{len(Config.SYMBOLS)} prices")
         return prices
 
     async def _generate_and_execute_signals(self, current_prices: dict):
@@ -206,7 +223,7 @@ class TradingEngine:
                     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
                     atr_value = tr.rolling(14).mean().iloc[-1]
 
-            # Get real trade statistics
+            # Get real historical trade statistics (not just open positions)
             win_rate, avg_win, avg_loss = await self._calculate_trade_stats(session)
 
             qty = PositionSizer.calculate_position_size(
@@ -242,6 +259,21 @@ class TradingEngine:
                 take_profit_pct=take_profit_pct
             )
 
+            # Create entry trade record for tracking
+            entry_trade = Trade(
+                symbol=symbol,
+                side="BUY",
+                qty=qty,
+                fill_price=order.fill_price,
+                gross_pnl=0.0,
+                net_pnl=0.0,
+                strategy_name="consensus",
+                slippage_cost=0.0,
+                fee_cost=0.0
+            )
+            session.add(entry_trade)
+            await session.flush()  # Flush to get the trade ID
+
             new_pos = Position(
                 symbol=symbol,
                 qty=qty,
@@ -266,26 +298,37 @@ class TradingEngine:
             position = pos_result.scalar_one_or_none()
 
             if position:
-                pnl = (price - position.avg_entry_price) * position.qty
-                await self.broker.place_order(symbol, "SELL", position.qty)
+                # Place order FIRST - if it fails, don't delete position from DB
+                order = await self.broker.place_order(symbol, "SELL", position.qty)
 
+                # Calculate P&L accounting for all costs
+                gross_pnl = (order.fill_price - position.avg_entry_price) * position.qty
+                slippage_cost = price * (Config.SLIPPAGE_BPS / 10000) * position.qty
+                fee_cost = order.fill_price * position.qty * Config.FEE_RATE
+                net_pnl = gross_pnl - slippage_cost - fee_cost
+
+                # Only after successful order, create trade record and close position
                 trade = Trade(
                     symbol=symbol,
                     side="SELL",
                     qty=position.qty,
-                    fill_price=price,
-                    gross_pnl=pnl,
-                    net_pnl=pnl * (1 - Config.FEE_RATE),
+                    fill_price=order.fill_price,
+                    gross_pnl=gross_pnl,
+                    slippage_cost=slippage_cost,
+                    fee_cost=fee_cost,
+                    net_pnl=net_pnl,
                     strategy_name=position.strategy_name,
                     entry_trade_id=position.id
                 )
                 session.add(trade)
                 session.delete(position)
                 await session.commit()
-                logger.info(f"{symbol}: Position closed. P&L: ${pnl:.2f}")
+                logger.info(f"{symbol}: Position closed. P&L: ${net_pnl:.2f} (gross: ${gross_pnl:.2f}, costs: ${slippage_cost + fee_cost:.2f})")
+            else:
+                logger.debug(f"{symbol}: No position to close")
 
         except Exception as e:
-            logger.error(f"{symbol}: Sell order failed: {e}")
+            logger.error(f"{symbol}: Sell order failed (position kept open): {e}")
 
     async def _close_all_positions(self):
         """Emergency close all positions."""

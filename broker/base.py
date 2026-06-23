@@ -3,6 +3,11 @@ from dataclasses import dataclass
 from datetime import datetime
 
 
+class DataUnavailableError(Exception):
+    """Raised when price data is unavailable or stale."""
+    pass
+
+
 @dataclass
 class Order:
     order_id: str

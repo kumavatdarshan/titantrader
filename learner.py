@@ -41,7 +41,7 @@ class Learner:
 
             logger.info(f"Training on {len(trades)} trades | Win rate: {win_rate*100:.1f}% | Avg win: ${avg_win:.2f} | Avg loss: ${avg_loss:.2f}")
 
-            X, y = await self._prepare_features(trades)
+            X, y, scaler = await self._prepare_features(trades)
             if X is None or len(X) < 10:
                 logger.error("Insufficient features for training")
                 return
@@ -137,7 +137,7 @@ class Learner:
 
             if len(features_list) < 15:
                 logger.warning(f"Only {len(features_list)} trades with features. Need at least 15.")
-                return None, None
+                return None, None, None
 
             df = pd.DataFrame(features_list)
             df = df.fillna(df.median())
@@ -147,7 +147,7 @@ class Learner:
                 df = df.dropna()
                 if len(df) < 10:
                     logger.error("Not enough valid data after NaN removal")
-                    return None, None
+                    return None, None, None
 
             X = df[['rsi', 'macd', 'macd_signal', 'bb_position', 'atr', 'momentum', 'volatility', 'volume_ratio', 'hour_of_day', 'day_of_week']].values
             y = np.array(targets)
@@ -158,11 +158,11 @@ class Learner:
             win_rate = y.mean() * 100
             logger.info(f"Prepared {len(X)} training samples with market features. Win rate: {win_rate:.1f}%")
 
-            return X, y
+            return X, y, scaler
 
         except Exception as e:
             logger.error(f"Feature preparation error: {e}", exc_info=True)
-            return None, None
+            return None, None, None
 
     def _calculate_rsi(self, closes, period=14):
         delta = np.diff(closes)

@@ -2,16 +2,12 @@ import logging
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-from broker.base import Broker, Order
+from broker.base import Broker, Order, DataUnavailableError
 from db import Price, Position, Trade
 from config import Config
 from data import fetch_price
 
 logger = logging.getLogger(__name__)
-
-
-class DataUnavailableError(Exception):
-    pass
 
 
 class PaperBroker(Broker):
