@@ -33,13 +33,14 @@ class MarketRegime:
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         atr = tr.rolling(14).mean()
         current_atr = atr.iloc[-1]
-        atr_pct = (current_atr / close.iloc[-1]) * 100
+        current_close = close.iloc[-1]
+        atr_pct = (current_atr / current_close) * 100 if current_close > 0 else 0.0
 
         # Trend: EMA 20/50 crossover
         ema20 = close.ewm(span=20).mean()
         ema50 = close.ewm(span=50).mean()
         is_uptrend = ema20.iloc[-1] > ema50.iloc[-1]
-        trend_distance = abs(ema20.iloc[-1] - ema50.iloc[-1]) / close.iloc[-1]
+        trend_distance = abs(ema20.iloc[-1] - ema50.iloc[-1]) / current_close if current_close > 0 else 0.0
 
         # ADX for trend strength
         plus_dm = high.diff()
@@ -57,11 +58,12 @@ class MarketRegime:
         # Range detection
         high_20 = high.rolling(20).max()
         low_20 = low.rolling(20).min()
-        range_pct = ((high_20.iloc[-1] - low_20.iloc[-1]) / close.iloc[-1]) * 100
+        range_pct = ((high_20.iloc[-1] - low_20.iloc[-1]) / current_close) * 100 if current_close > 0 else 0.0
 
         # Volume trend
         vol_ma = volume.rolling(20).mean()
-        vol_ratio = volume.iloc[-1] / vol_ma.iloc[-1]
+        vol_ma_value = vol_ma.iloc[-1]
+        vol_ratio = volume.iloc[-1] / vol_ma_value if vol_ma_value > 0 else 1.0
 
         # Determine regime
         if current_adx > 25:  # Strong trend

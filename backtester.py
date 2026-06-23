@@ -94,7 +94,11 @@ class Backtester:
                     entry_price = None
 
             if position is None:
-                price_ret = (close - test_df.iloc[i-1]['Close']) / test_df.iloc[i-1]['Close']
+                prev_close = test_df.iloc[i-1]['Close']
+                if prev_close > 0:
+                    price_ret = (close - prev_close) / prev_close
+                else:
+                    price_ret = 0.0
                 daily_returns.append(price_ret)
 
             if close > peak:

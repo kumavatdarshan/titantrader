@@ -170,7 +170,8 @@ class PaperBroker(Broker):
                     continue
 
                 current_price = current_prices[pos.symbol]
-                unrealized_pnl_pct = (current_price - pos.avg_entry_price) / pos.avg_entry_price
+                # Protect against zero entry price
+                unrealized_pnl_pct = (current_price - pos.avg_entry_price) / pos.avg_entry_price if pos.avg_entry_price > 0 else 0.0
 
                 if pos.stop_loss_price and current_price <= pos.stop_loss_price:
                     logger.warning(f"{pos.symbol}: Stop-loss triggered at ${current_price:.4f}")

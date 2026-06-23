@@ -103,10 +103,9 @@ class MLPredictorStrategy(Strategy):
 
             bb_position = (closes[-1] - bb_lower[-1]) / (bb_upper[-1] - bb_lower[-1]) if (bb_upper[-1] - bb_lower[-1]) != 0 else 0.5
 
-            from datetime import datetime
-            now = pd.Timestamp(datetime.utcnow())
-            hour = now.hour
-            day = now.dayofweek
+            # Protect volatility calculation against zero prices
+            safe_closes = np.maximum(closes[:-1], 1e-10)
+            volatility_safe = np.std(np.diff(closes) / safe_closes)
 
             features = [
                 rsi,
@@ -115,10 +114,8 @@ class MLPredictorStrategy(Strategy):
                 bb_position,
                 atr,
                 momentum,
-                volatility,
+                volatility_safe,
                 volume_ratio,
-                # Removed hour and day to prevent overfitting to specific times
-                # Models should work across different trading hours
             ]
 
             return np.array(features)

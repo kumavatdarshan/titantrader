@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select, desc
 from db import Trade, Position, Strategy as StrategyModel, EquitySnapshot, Lesson, MLRun
 from datetime import datetime
+from config import Config
 import json
 
 logger = logging.getLogger(__name__)
@@ -30,14 +31,23 @@ def create_dashboard(session_factory, broker, engine):
             strategies = await session.execute(select(StrategyModel).where(StrategyModel.is_active))
             active_strats = strategies.scalars().all()
 
+        # Calculate P&L with protection against zero/invalid values
+        pnl_usd = account['portfolio_value'] - Config.STARTING_CAPITAL
+        pnl_pct = (pnl_usd / Config.STARTING_CAPITAL * 100) if Config.STARTING_CAPITAL > 0 else 0.0
+
+        # Calculate drawdown with protection
+        drawdown_pct = 0.0
+        if account['peak_value'] > 0:
+            drawdown_pct = ((account['peak_value'] - account['portfolio_value']) / account['peak_value'] * 100)
+
         return {
             "mode": "PAPER" if not engine.is_paused else "PAUSED",
             "cash": round(account['cash'], 2),
             "total_value": round(account['portfolio_value'], 2),
-            "pnl_usd": round(account['portfolio_value'] - 10000, 2),
-            "pnl_pct": round((account['portfolio_value'] - 10000) / 10000 * 100, 2),
+            "pnl_usd": round(pnl_usd, 2),
+            "pnl_pct": round(pnl_pct, 2),
             "peak_value": round(account['peak_value'], 2),
-            "drawdown_pct": round((account['peak_value'] - account['portfolio_value']) / account['peak_value'] * 100, 2),
+            "drawdown_pct": round(drawdown_pct, 2),
             "open_positions": len(pos_list),
             "active_strategies": len(active_strats),
             "is_paused": engine.is_paused,
