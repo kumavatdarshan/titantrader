@@ -86,3 +86,51 @@ class Config:
     @classmethod
     def is_paper_mode(cls):
         return cls.TRADING_MODE in ("alpaca_paper", "local_paper")
+
+    @classmethod
+    def validate(cls):
+        """Validate all configuration values at startup."""
+        errors = []
+
+        # Trading hours validation
+        if cls.TRADING_HOURS_END <= cls.TRADING_HOURS_START:
+            errors.append(f"Invalid trading hours: START={cls.TRADING_HOURS_START}, END={cls.TRADING_HOURS_END}")
+
+        if cls.TRADING_HOURS_START < 0 or cls.TRADING_HOURS_START > 23:
+            errors.append(f"TRADING_HOURS_START out of range: {cls.TRADING_HOURS_START}")
+
+        if cls.TRADING_HOURS_END < 1 or cls.TRADING_HOURS_END > 24:
+            errors.append(f"TRADING_HOURS_END out of range: {cls.TRADING_HOURS_END}")
+
+        # Risk parameters validation
+        if cls.RISK_PER_TRADE_PCT <= 0 or cls.RISK_PER_TRADE_PCT > 0.5:
+            errors.append(f"RISK_PER_TRADE_PCT out of range: {cls.RISK_PER_TRADE_PCT}")
+
+        if cls.MAX_DAILY_LOSS_PCT <= 0 or cls.MAX_DAILY_LOSS_PCT > 1.0:
+            errors.append(f"MAX_DAILY_LOSS_PCT out of range: {cls.MAX_DAILY_LOSS_PCT}")
+
+        if cls.MAX_OPEN_POSITIONS <= 0:
+            errors.append(f"MAX_OPEN_POSITIONS must be > 0: {cls.MAX_OPEN_POSITIONS}")
+
+        if cls.MAX_DAILY_TRADES <= 0:
+            errors.append(f"MAX_DAILY_TRADES must be > 0: {cls.MAX_DAILY_TRADES}")
+
+        # Capital validation
+        if cls.STARTING_CAPITAL <= 0:
+            errors.append(f"STARTING_CAPITAL must be > 0: {cls.STARTING_CAPITAL}")
+
+        # Symbols validation
+        if not cls.SYMBOLS or len(cls.SYMBOLS) == 0:
+            errors.append("SYMBOLS list is empty")
+
+        if len(cls.SYMBOLS) > 20:
+            errors.append(f"Too many symbols ({len(cls.SYMBOLS)}), recommend max 20")
+
+        # ML validation
+        if cls.ML_MIN_ACCURACY < 0 or cls.ML_MIN_ACCURACY > 1.0:
+            errors.append(f"ML_MIN_ACCURACY out of range: {cls.ML_MIN_ACCURACY}")
+
+        if cls.ML_MIN_TRADES_TO_TRAIN <= 10:
+            errors.append(f"ML_MIN_TRADES_TO_TRAIN too low: {cls.ML_MIN_TRADES_TO_TRAIN}")
+
+        return errors

@@ -81,13 +81,15 @@ class Backtester:
                     position = "long"
                     entry_price = close
                 elif crossunder and ema21 < ema50 and position == "long":
-                    pnl = (close - entry_price) * 100 / entry_price
-                    if pnl > 0:
+                    # Calculate P&L as percentage return (not multiplied by 100)
+                    pnl_pct = (close - entry_price) / entry_price
+                    if pnl_pct > 0:
                         winning_trades += 1
                     else:
                         losing_trades += 1
-                    total_pnl += pnl
-                    daily_returns.append(pnl / 100)
+                    # Store actual percentage return, not percentage*100
+                    total_pnl += pnl_pct
+                    daily_returns.append(pnl_pct)
                     position = None
                     entry_price = None
 

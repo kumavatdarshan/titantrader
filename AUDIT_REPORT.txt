@@ -1,0 +1,98 @@
+TITANTRADER COMPLETE AUDIT - BUGS FOUND
+
+CRITICAL BUGS (3)
+=================
+
+BUG 1: engine.py:309 - CRITICAL - Wrong Cost Calculation
+Problem: cost_per_share = order.fill_price + (Config.SLIPPAGE_BPS / 10000) + (Config.FEE_RATE)
+Issue: Adds BPS instead of multiplying. If fill_price=$100, SLIPPAGE_BPS=2:
+  Current: 100 + 0.0002 + 0 = 100.0002
+  Should be: 100 * (1 + 0.0002 + 0) = 100.02
+Impact: P&L calculations completely wrong, position sizing too aggressive
+Fix: cost_per_share = order.fill_price * (1 + (Config.SLIPPAGE_BPS / 10000) + Config.FEE_RATE)
+
+
+BUG 2: backtester.py:84-105 - CRITICAL - Wrong P&L Units
+Problem: pnl = (close - entry_price) * 100 / entry_price (percentage)
+         total_pnl += pnl (accumulates percentage, not currency)
+Issue: Results show "500% total return" instead of "$5,000 P&L"
+Impact: All backtest metrics in wrong units, strategy evaluation corrupted
+Fix: Remove * 100 from line 84
+
+
+BUG 3: engine.py:72 - CRITICAL - Timezone Mismatch
+Problem: Uses naive datetime.utcnow() for filtering database queries
+Issue: May not match timezone-aware datetimes in database
+Impact: Daily trade counting may be off, circuit breaker timing wrong
+Fix: Standardize on naive UTC datetimes throughout codebase
+
+
+MAJOR BUGS (3)
+==============
+
+BUG 4: paper_broker.py:194 - MAJOR - Missing Slippage Cost
+Problem: net_pnl = gross_pnl - fee_cost (missing slippage_cost)
+Issue: Inconsistent with engine.py which includes slippage
+Impact: Auto-stop positions show inflated P&L, accounting inconsistent
+Fix: net_pnl = gross_pnl - slippage_cost - fee_cost
+
+
+BUG 5: risk.py:66 - MAJOR - Fragile Float Comparison
+Problem: if win_rate == 0.52 and avg_win == 100 and avg_loss == 100:
+Issue: Exact float equality fails with any rounding variation
+Impact: Default conservative Kelly detection fails with few trades
+Fix: Use tolerance: abs(win_rate - 0.52) < 0.001
+
+
+BUG 6: weekend_backtest.py:219 - MAJOR - Missing MLPredictorStrategy
+Problem: Strategy list excludes MLPredictorStrategy
+Issue: ML never tested in backtest, but included in production engine
+Impact: ML model untested, strategy signals inconsistent
+Fix: Add MLPredictorStrategy() to strategies list
+
+
+MEDIUM BUGS (2)
+===============
+
+BUG 7: learner.py:87-161 - MEDIUM - Confusing Feature/Target Alignment
+Problem: features_list and targets built in parallel in try/except
+Issue: Code fragile, hard to verify, likely source of future bugs
+Impact: ML training pipeline fragile by design
+Fix: Restructure to make feature-target pairing explicit
+
+
+BUG 8: engine.py:250-255 - MEDIUM - Rolling Calculation Edge Case
+Problem: rolling(14) on df with 14-20 rows may produce NaN
+Issue: ATR becomes NaN, propagates to position sizing
+Impact: Position sizing may fail silently with insufficient data
+Fix: Use len(df) >= 20 and check for NaN before using
+
+
+LOW ISSUES (2)
+==============
+
+ISSUE 9: data.py:315 - LOW - Bare except Clause
+Problem: except: catches all exceptions including SystemExit
+Fix: except (RuntimeError, ValueError, ConnectionError) as e:
+
+
+ISSUE 10: config.py - LOW - Missing Validation
+Problem: No validation of configuration parameters
+Fix: Add Config.validate() method to check trading hours, risk params, etc.
+
+
+IMPACT SUMMARY
+==============
+- Backtesting metrics completely unreliable (CRITICAL #2)
+- P&L calculations wrong everywhere (CRITICAL #1)
+- Daily trade limits may not enforce (CRITICAL #3)
+- ML strategy untested and inconsistent (MAJOR #6)
+- All position sizing uses wrong costs (cascading from CRITICAL #1)
+
+RECOMMEND FIXES IN ORDER:
+1. backtester.py:84 - Fix units first (affects all metrics)
+2. engine.py:309 - Fix cost calculation (affects all P&L)
+3. engine.py:72 - Fix timezone (affects controls)
+4. risk.py:66 - Fix kelly detection
+5. paper_broker.py:194 - Fix accounting
+6. weekend_backtest.py - Add ML strategy

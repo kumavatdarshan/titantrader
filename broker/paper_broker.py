@@ -190,8 +190,9 @@ class PaperBroker(Broker):
         """Close a position and record the trade."""
         gross_pnl = pos.qty * (current_price - pos.avg_entry_price)
         trade_value = abs(pos.qty * current_price)
+        slippage_cost = trade_value * (Config.SLIPPAGE_BPS / 10000)
         fee_cost = trade_value * Config.FEE_RATE
-        net_pnl = gross_pnl - fee_cost
+        net_pnl = gross_pnl - slippage_cost - fee_cost
 
         trade = Trade(
             symbol=pos.symbol,
@@ -199,8 +200,9 @@ class PaperBroker(Broker):
             qty=pos.qty,
             fill_price=current_price,
             gross_pnl=gross_pnl,
-            net_pnl=net_pnl,
+            slippage_cost=slippage_cost,
             fee_cost=fee_cost,
+            net_pnl=net_pnl,
             strategy_name=pos.strategy_name,
             exit_reason=reason,
             entry_trade_id=None,

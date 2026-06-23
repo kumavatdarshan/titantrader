@@ -65,13 +65,13 @@ class TitanTrader:
         logger.info("=" * 70)
 
         # Validate configuration
-        if Config.TRADING_HOURS_END <= Config.TRADING_HOURS_START:
-            logger.error(f"Invalid trading hours: START={Config.TRADING_HOURS_START}, END={Config.TRADING_HOURS_END}")
+        config_errors = Config.validate()
+        if config_errors:
+            logger.error("Configuration validation failed:")
+            for error in config_errors:
+                logger.error(f"  - {error}")
             sys.exit(1)
-        if not Config.SYMBOLS:
-            logger.error("No symbols configured")
-            sys.exit(1)
-        logger.info(f"✓ Configuration validated")
+        logger.info(f"✓ Configuration validated successfully")
 
         db_engine = await init_db()
         self.session_factory = get_session_factory(db_engine)

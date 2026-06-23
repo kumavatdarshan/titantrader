@@ -65,16 +65,19 @@ class TradingEngine:
             logger.error(f"Trading cycle error: {e}", exc_info=True)
 
     async def _count_today_trades(self, session) -> int:
-        """Count how many trades were executed today."""
+        """Count how many trades were executed today (UTC)."""
         try:
-            today = datetime.utcnow().date()
+            # Get start of today in UTC (midnight UTC)
+            now_utc = datetime.utcnow()
+            today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+
             result = await session.execute(
-                select(Trade).where(Trade.timestamp >= datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0))
+                select(Trade).where(Trade.timestamp >= today_start)
             )
             trades = result.scalars().all()
             return len(trades)
         except Exception as e:
-            logger.error(f"Failed to count daily trades: {e}")
+            logger.error(f"Failed to count daily trades: {e}", exc_info=True)
             return 0
 
     async def _check_drawdown_guard(self):
@@ -247,12 +250,19 @@ class TradingEngine:
             atr_value = None
             if candle_result['success'] and candle_result['data'] is not None:
                 df = candle_result['data']
-                if len(df) >= 14:
+                # Need at least 20 candles for rolling(14) to produce valid (non-NaN) values
+                if len(df) >= 20:
                     high_low = df['High'] - df['Low']
                     high_close = abs(df['High'] - df['Close'].shift())
                     low_close = abs(df['Low'] - df['Close'].shift())
                     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-                    atr_value = tr.rolling(14).mean().iloc[-1]
+                    atr_series = tr.rolling(14).mean()
+                    # Check that we have a valid (non-NaN) ATR value
+                    if not pd.isna(atr_series.iloc[-1]):
+                        atr_value = atr_series.iloc[-1]
+                    else:
+                        logger.warning(f"{symbol}: ATR calculation resulted in NaN, using fallback")
+                        atr_value = None
 
             # Get real historical trade statistics (not just open positions)
             win_rate, avg_win, avg_loss = await self._calculate_trade_stats(session)
@@ -306,7 +316,9 @@ class TradingEngine:
             await session.flush()  # Flush to get the trade ID
 
             # Account for costs in avg_entry_price for accurate P&L calculation
-            cost_per_share = order.fill_price + (Config.SLIPPAGE_BPS / 10000) + (Config.FEE_RATE)
+            # Multiply to get actual cost: price * (1 + slippage_ratio + fee_rate)
+            slippage_ratio = Config.SLIPPAGE_BPS / 10000
+            cost_per_share = order.fill_price * (1 + slippage_ratio + Config.FEE_RATE)
 
             new_pos = Position(
                 symbol=symbol,

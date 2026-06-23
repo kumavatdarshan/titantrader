@@ -208,6 +208,7 @@ async def main() -> int:
         RSIReversionStrategy,
         MACDMomentumStrategy,
         VolatilityBreakoutStrategy,
+        MLPredictorStrategy,
     )
     from backtester import Backtester
     from learner import Learner
@@ -221,6 +222,7 @@ async def main() -> int:
         RSIReversionStrategy(),
         MACDMomentumStrategy(),
         VolatilityBreakoutStrategy(),
+        MLPredictorStrategy(),
     ]
 
     logger.info(f"Symbols   : {', '.join(Config.SYMBOLS)}")

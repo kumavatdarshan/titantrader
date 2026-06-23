@@ -63,7 +63,12 @@ class PositionSizer:
         # ===== Kelly-Based Sizing =====
         # NOTE: Caller should pass historical trade count, not current position count
         # If we have few historical trades, use conservative Kelly
-        if win_rate == 0.52 and avg_win == 100 and avg_loss == 100:
+        # Use tolerance for float comparison (not exact equality)
+        default_stats = (abs(win_rate - 0.52) < 0.001 and
+                         abs(avg_win - 100) < 0.1 and
+                         abs(avg_loss - 100) < 0.1)
+
+        if default_stats:
             # Default conservative stats indicate insufficient history
             kelly_fraction = Config.KELLY_FRACTION_CAP * 0.5
             logger.debug(f"{symbol}: Using fixed 50% Kelly (insufficient trade history)")
