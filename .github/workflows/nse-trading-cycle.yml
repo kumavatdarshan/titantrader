@@ -9,8 +9,9 @@ on:
       - 'strategies/**'
       - 'run_cycle.py'
   schedule:
-    # Run every 30 minutes during NSE market hours (9:30 AM - 3:30 PM IST = 4 AM - 10 AM UTC)
-    - cron: '0,30 4-10 * * 1-5'
+    # Run every 15 minutes during NSE market hours (9:30 AM - 3:30 PM IST = 4 AM - 10 AM UTC)
+    # Weekdays only (1-5 = Mon-Fri)
+    - cron: '0,15,30,45 4-9 * * 1-5'
   workflow_dispatch:
 
 jobs:

@@ -320,17 +320,41 @@ async def fetch_price(symbol: str, use_mock: bool = True) -> dict:
     raise RuntimeError(f"Could not fetch price for {symbol}")
 
 
+def _yfinance_historical(symbol: str, days: int) -> pd.DataFrame | None:
+    """Fetch historical OHLCV from yfinance (works on GitHub Actions US servers)."""
+    try:
+        import yfinance as yf
+        to_date = datetime.utcnow()
+        from_date = to_date - timedelta(days=days)
+
+        df = yf.download(symbol, start=from_date.date(), end=to_date.date(), progress=False)
+        if df is not None and not df.empty:
+            df = df.reset_index()
+            df.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close']
+            df = df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
+            df = df.dropna(subset=['Close'])
+            if not df.empty:
+                logger.info(f"{symbol}: Retrieved {len(df)} bars from yfinance")
+                return df
+        return None
+    except Exception as e:
+        logger.debug(f"yfinance failed for {symbol}: {e}")
+        return None
+
+
 async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
     """
     Fetch historical OHLCV candles.
 
     For Indian NSE stocks (fallback chain):
-        1. NseIndiaApi historical (fastest, real-time capable)
-        2. Bhav Copy (works on GitHub Actions, official NSE data)
-        3. synthetic mock (last resort)
+        1. NseIndiaApi historical (fastest, local India)
+        2. yfinance (works on GitHub Actions US servers)
+        3. Bhav Copy (official NSE data, slow)
+        4. synthetic mock (last resort)
 
     For non-Indian stocks:
-        1. synthetic mock
+        1. yfinance
+        2. synthetic mock
 
     period: '1mo' | '3mo' | '6mo' | '1y' | '2y'
     Returns: {symbol, data: DataFrame, rows, source, success, error?}
@@ -343,6 +367,7 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
     try:
         if _is_indian(symbol):
             logger.info(f"{symbol}: Fetching {days}d of NSE historical...")
+            # Try local NSE first (faster if you're in India)
             df = await asyncio.get_event_loop().run_in_executor(
                 None, _nse_historical, symbol, days
             )
@@ -351,11 +376,37 @@ async def fetch_ohlcv_candles(symbol: str, period: str = "1mo") -> dict:
                 return {"symbol": symbol, "data": df, "rows": len(df),
                         "source": "nse", "success": True}
 
-            logger.warning(f"{symbol}: All sources failed (NseIndiaApi + Bhav Copy) — using synthetic")
+            # Fallback to yfinance (works on GitHub Actions)
+            logger.debug(f"{symbol}: NSE failed, trying yfinance...")
+            df = await asyncio.get_event_loop().run_in_executor(
+                None, _yfinance_historical, symbol, days
+            )
+            if df is not None and not df.empty:
+                logger.info(f"{symbol}: Got {len(df)} bars from yfinance")
+                return {"symbol": symbol, "data": df, "rows": len(df),
+                        "source": "yfinance", "success": True}
+
+            logger.warning(f"{symbol}: NSE + yfinance failed, trying Bhav Copy...")
+            df = await asyncio.get_event_loop().run_in_executor(
+                None, _bhav_copy_fallback, symbol, days
+            )
+            if df is not None and not df.empty:
+                logger.info(f"{symbol}: Got {len(df)} bars from Bhav Copy")
+                return {"symbol": symbol, "data": df, "rows": len(df),
+                        "source": "bhav_copy", "success": True}
+
+            logger.warning(f"{symbol}: All real sources failed — using synthetic")
 
         else:
-            # Non-Indian: go straight to synthetic
-            logger.info(f"{symbol}: Non-Indian symbol — using synthetic data")
+            # Non-Indian: try yfinance first, then synthetic
+            logger.info(f"{symbol}: Fetching {days}d from yfinance...")
+            df = await asyncio.get_event_loop().run_in_executor(
+                None, _yfinance_historical, symbol, days
+            )
+            if df is not None and not df.empty:
+                logger.info(f"{symbol}: Got {len(df)} bars from yfinance")
+                return {"symbol": symbol, "data": df, "rows": len(df),
+                        "source": "yfinance", "success": True}
 
         # Last resort: synthetic data
         if symbol not in MOCK_PRICES and _bare_symbol(symbol) not in MOCK_PRICES:

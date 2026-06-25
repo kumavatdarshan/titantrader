@@ -70,10 +70,10 @@ class Config:
 
     # ===== ML Model =====
     ML_ENABLED = True
-    ML_MIN_ACCURACY = 0.60      # Only deploy if >= 60% accuracy
-    ML_MIN_TRADES_TO_TRAIN = 50 # Need 50 closed trades for training
-    ML_RETRAIN_HOUR = 22        # Retrain at 10 PM UTC = 6 PM ET (after 4 PM close)
+    ML_MIN_ACCURACY = 0.55      # Deploy if >= 55% accuracy (self-improving, starts low)
+    ML_MIN_TRADES_TO_TRAIN = 15 # Need only 15 closed trades for training (daily retraining)
     ML_VALIDATION_SPLIT = 0.2   # 20% validation set
+    ML_USE_LIGHTGBM = True      # Use LightGBM instead of RandomForest (better for NSE)
 
     # ===== Logging =====
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

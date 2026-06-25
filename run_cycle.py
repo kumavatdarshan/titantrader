@@ -45,13 +45,14 @@ async def main():
         from sqlalchemy import select
         from db import Trade
         async with session_factory() as session:
-            result = await session.execute(select(Trade))
-            trades = result.scalars().all()
-            if len(trades) >= Config.ML_MIN_TRADES_TO_TRAIN:
-                logger.info(f"Retraining ML on {len(trades)} trades...")
+            # Only count SELL trades (closed trades with real P&L)
+            result = await session.execute(select(Trade).where(Trade.side == "SELL"))
+            sell_trades = result.scalars().all()
+            if len(sell_trades) >= Config.ML_MIN_TRADES_TO_TRAIN:
+                logger.info(f"Retraining ML on {len(sell_trades)} closed trades...")
                 await learner.retrain_ml_model()
             else:
-                logger.info(f"Not enough trades yet ({len(trades)}/{Config.ML_MIN_TRADES_TO_TRAIN})")
+                logger.info(f"Not enough closed trades yet ({len(sell_trades)}/{Config.ML_MIN_TRADES_TO_TRAIN})")
 
         logger.info("=" * 60)
         logger.info("Cycle complete")

@@ -101,20 +101,6 @@ class PaperBroker(Broker):
             timestamp=datetime.utcnow()
         )
 
-        async with self.session_factory() as session:
-            trade = Trade(
-                symbol=symbol,
-                side=side,
-                qty=qty,
-                fill_price=fill_price,
-                slippage_cost=slippage_cost,
-                fee_cost=fee_cost,
-                strategy_name="engine",
-                timestamp=datetime.utcnow()
-            )
-            session.add(trade)
-            await session.commit()
-
         logger.info(
             f"Order filled: {side} {qty} {symbol} @ ${fill_price:.4f} "
             f"| Slippage: ${slippage_cost:.4f} | Fee: ${fee_cost:.4f}"

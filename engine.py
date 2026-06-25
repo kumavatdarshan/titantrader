@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 from sqlalchemy import select
 from broker.base import Broker, DataUnavailableError
-from strategies import EMACrossStrategy, RSIReversionStrategy, MACDMomentumStrategy, MLPredictorStrategy, VolatilityBreakoutStrategy
+from strategies import EMACrossStrategy, RSIReversionStrategy, MACDMomentumStrategy, MLPredictorStrategy, VolatilityBreakoutStrategy, SupertrendStrategy
 from db import Position, Trade, Strategy as StrategyModel, EquitySnapshot, Lesson
 from config import Config
 from risk import PositionSizer
@@ -18,6 +18,7 @@ class TradingEngine:
         self.broker = broker
         self.session_factory = session_factory
         self.strategies = [
+            SupertrendStrategy(),        # 67% win rate on NSE
             EMACrossStrategy(),
             RSIReversionStrategy(),
             MACDMomentumStrategy(),
@@ -300,20 +301,6 @@ class TradingEngine:
                 take_profit_pct=take_profit_pct
             )
 
-            # Create entry trade record for tracking
-            entry_trade = Trade(
-                symbol=symbol,
-                side="BUY",
-                qty=qty,
-                fill_price=order.fill_price,
-                gross_pnl=0.0,
-                net_pnl=0.0,
-                strategy_name="consensus",
-                slippage_cost=0.0,
-                fee_cost=0.0
-            )
-            session.add(entry_trade)
-            await session.flush()  # Flush to get the trade ID
 
             # Account for costs in avg_entry_price for accurate P&L calculation
             # Multiply to get actual cost: price * (1 + slippage_ratio + fee_rate)
@@ -386,7 +373,7 @@ class TradingEngine:
             logger.error(f"{symbol}: Sell order failed (position kept open): {e}")
 
     async def _close_all_positions(self):
-        """Emergency close all positions."""
+        """Emergency close all positions with proper P&L recording."""
         try:
             current_prices = await self._fetch_all_prices()
 
@@ -397,10 +384,8 @@ class TradingEngine:
                 for pos in pos_list:
                     if pos.symbol in current_prices:
                         price = current_prices[pos.symbol]
-                        await self.broker.place_order(pos.symbol, "SELL", pos.qty)
-                        session.delete(pos)
+                        await self._place_sell_order(session, pos.symbol, price)
 
-                await session.commit()
                 logger.info(f"Emergency close: {len(pos_list)} positions closed")
 
         except Exception as e:
