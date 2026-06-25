@@ -13,7 +13,7 @@ class Config:
     TRADE_INTERVAL_MINUTES = int(os.getenv("TRADE_INTERVAL_MINUTES", 30))
 
     # ===== Universe: Indian NSE Stocks (Large Cap) =====
-    SYMBOLS = os.getenv("SYMBOLS", "TCS.NS,INFY.NS,RELIANCE.NS,HDFC.NS,BAJAJFINSV.NS,MARUTI.NS,SUNPHARMA.NS,WIPRO.NS,HCLTECH.NS,TECHM.NS").split(",")
+    SYMBOLS = os.getenv("SYMBOLS", "TCS.NS,INFY.NS,RELIANCE.NS,HDFCBANK.NS,BAJAJFINSV.NS,MARUTI.NS,SUNPHARMA.NS,WIPRO.NS,HCLTECH.NS,TECHM.NS").split(",")
 
     # ===== Market Hours (UTC) - NSE (Indian Market) =====
     MARKET_OPEN_UTC = "03:45"  # 9:15 AM IST (NSE open)
