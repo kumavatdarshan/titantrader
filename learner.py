@@ -152,7 +152,7 @@ class Learner:
                     continue
 
                 try:
-                    result = await fetch_ohlcv_candles(trade.symbol, period="1mo")
+                    result = await fetch_ohlcv_candles(trade.symbol, period="3mo")
                     if not result['success'] or result['data'] is None or len(result['data']) < 26:
                         continue
 
